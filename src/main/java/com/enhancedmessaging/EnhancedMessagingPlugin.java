@@ -100,8 +100,7 @@ public class EnhancedMessagingPlugin extends Plugin
 				{
 					session.panel.setStorageState(session.history.isRetentionEnabled(), session.history.canDelete(),
 						session.history.getStatus());
-					session.panel.refresh();
-				});
+				}, session.panel::refresh);
 			session.history.setRetentionEnabled(config.retainHistory());
 			session.navigationButton = NavigationButton.builder()
 				.tooltip("Enhanced Messaging")

@@ -51,11 +51,6 @@ public class EnhancedMessagingPanel extends PluginPanel
 	private final JLabel storageStatus = new JLabel("Session history only.");
 	private boolean refreshing;
 
-	public EnhancedMessagingPanel(ConversationService conversationService)
-	{
-		this(conversationService, enabled -> { }, () -> { });
-	}
-
 	public EnhancedMessagingPanel(ConversationService conversationService, Consumer<Boolean> retentionChanged,
 		Runnable deleteSavedHistory)
 	{
@@ -145,7 +140,8 @@ public class EnhancedMessagingPanel extends PluginPanel
 		storageStatus.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
 		storageStatus.putClientProperty("html.disable", true);
 		note.add(storageStatus);
-		for (String line : new String[]{"Latest 500 messages/player.", "Up to 100 players."})
+		for (String line : new String[]{"Latest " + Conversation.MAX_MESSAGES + " messages/player.",
+			"Up to " + ConversationService.MAX_CONVERSATIONS + " players."})
 		{
 			JLabel label = new JLabel(line);
 			label.setForeground(ColorScheme.LIGHT_GRAY_COLOR);

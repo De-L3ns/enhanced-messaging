@@ -3,6 +3,7 @@ package com.enhancedmessaging.application;
 import com.enhancedmessaging.domain.PrivateMessage;
 import java.io.IOException;
 import java.time.Instant;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
@@ -24,7 +25,7 @@ public class HistoryCoordinatorTest
 	private final FakeStorage storage = new FakeStorage();
 	private final ManualScheduler scheduler = new ManualScheduler();
 	private final HistoryCoordinator coordinator = new HistoryCoordinator(conversations, storage,
-		scheduler, Runnable::run, () -> { });
+		scheduler, Runnable::run, () -> { }, () -> { });
 
 	@After
 	public void tearDown()
@@ -176,6 +177,74 @@ public class HistoryCoordinatorTest
 		assertTrue(task.isCancelled());
 		assertEquals(List.of(message), storage.saves.get(0));
 		assertEquals(1, storage.saves.size());
+	}
+
+	@Test
+	public void messagesArrivingWhileTheSaveWaitsForTheUiAreBatchedTogether()
+	{
+		ArrayDeque<Runnable> uiTasks = new ArrayDeque<>();
+		HistoryCoordinator queued = startRetainingWithQueuedUi(uiTasks);
+		try
+		{
+			PrivateMessage first = message("Before timer fires");
+			PrivateMessage second = message("Before UI callback runs");
+			queued.record(first);
+			scheduler.runTasks();
+			queued.record(second);
+
+			assertTrue("The queued UI save must not create another timer", scheduler.tasks.isEmpty());
+			uiTasks.removeFirst().run();
+			assertEquals(List.of(first, second), storage.saves.get(0));
+			assertEquals(1, storage.saves.size());
+
+			PrivateMessage third = message("Next batch");
+			queued.record(third);
+			ScheduledFuture<?> next = scheduler.tasks.get(0);
+			queued.close();
+			assertTrue("The next batch timer must remain cancellable", next.isCancelled());
+			assertEquals(List.of(first, second, third), storage.saves.get(1));
+		}
+		finally
+		{
+			queued.close();
+		}
+	}
+
+	@Test
+	public void closingBeforeTheQueuedSaveRunsFlushesOnceAndIgnoresTheOldCallback()
+	{
+		ArrayDeque<Runnable> uiTasks = new ArrayDeque<>();
+		HistoryCoordinator queued = startRetainingWithQueuedUi(uiTasks);
+		try
+		{
+			PrivateMessage finalMessage = message("Final message");
+			queued.record(finalMessage);
+			scheduler.runTasks();
+			queued.close();
+			while (!uiTasks.isEmpty())
+			{
+				uiTasks.removeFirst().run();
+			}
+
+			assertEquals(1, storage.saves.size());
+			assertEquals(List.of(finalMessage), storage.saves.get(0));
+			assertTrue(scheduler.tasks.isEmpty());
+		}
+		finally
+		{
+			queued.close();
+		}
+	}
+
+	private HistoryCoordinator startRetainingWithQueuedUi(ArrayDeque<Runnable> uiTasks)
+	{
+		HistoryCoordinator queued = new HistoryCoordinator(conversations, storage, scheduler,
+			uiTasks::addLast, () -> { }, () -> { });
+		queued.switchAccount("account-a");
+		queued.setRetentionEnabled(true);
+		storage.loads.get(0).complete(List.of());
+		uiTasks.removeFirst().run();
+		return queued;
 	}
 
 	@Test

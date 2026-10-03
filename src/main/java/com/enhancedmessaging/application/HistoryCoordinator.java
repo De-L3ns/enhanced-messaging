@@ -17,10 +17,10 @@ public class HistoryCoordinator
 	private final HistoryStorage storage;
 	private final ScheduledExecutorService scheduler;
 	private final Executor uiExecutor;
-	private final Runnable changed;
+	private final Runnable storageChanged;
+	private final Runnable conversationsChanged;
 	@Getter
 	private boolean retentionEnabled;
-	@Getter
 	private String accountKey;
 	@Getter
 	private String status = "Session history only.";
@@ -33,13 +33,14 @@ public class HistoryCoordinator
 	private ScheduledFuture<?> pendingSave;
 
 	public HistoryCoordinator(ConversationService conversations, HistoryStorage storage,
-		ScheduledExecutorService scheduler, Executor uiExecutor, Runnable changed)
+		ScheduledExecutorService scheduler, Executor uiExecutor, Runnable storageChanged, Runnable conversationsChanged)
 	{
 		this.conversations = conversations;
 		this.storage = storage;
 		this.scheduler = scheduler;
 		this.uiExecutor = uiExecutor;
-		this.changed = changed;
+		this.storageChanged = storageChanged;
+		this.conversationsChanged = conversationsChanged;
 	}
 
 	public void switchAccount(String key)
@@ -49,17 +50,13 @@ public class HistoryCoordinator
 			return;
 		}
 		flush();
-		cancelSave();
-		generation++;
 		if (accountKey != null || key == null)
 		{
 			conversations.clear();
+			conversationsChanged.run();
 		}
 		accountKey = key;
-		loading = false;
-		blocked = false;
-		deleting = false;
-		dirty = retentionEnabled && !conversations.snapshot().isEmpty();
+		resetStorageState();
 		if (retentionEnabled && key != null)
 		{
 			load();
@@ -67,7 +64,7 @@ public class HistoryCoordinator
 		else
 		{
 			status = retentionEnabled ? "Log in to restore history." : "Session history only.";
-			changed.run();
+			storageChanged.run();
 		}
 	}
 
@@ -77,13 +74,8 @@ public class HistoryCoordinator
 		{
 			return;
 		}
-		cancelSave();
-		generation++;
 		retentionEnabled = enabled;
-		loading = false;
-		blocked = false;
-		deleting = false;
-		dirty = enabled && !conversations.snapshot().isEmpty();
+		resetStorageState();
 		if (enabled && accountKey != null)
 		{
 			load();
@@ -91,15 +83,35 @@ public class HistoryCoordinator
 		else
 		{
 			status = enabled ? "Log in to restore history." : "Saving off. Existing files kept.";
-			changed.run();
+			storageChanged.run();
 		}
 	}
 
 	public void logout()
 	{
-		switchAccount(null);
-		conversations.clear();
-		changed.run();
+		if (closed)
+		{
+			return;
+		}
+		if (accountKey != null)
+		{
+			switchAccount(null);
+		}
+		else
+		{
+			conversations.clear();
+			conversationsChanged.run();
+		}
+	}
+
+	private void resetStorageState()
+	{
+		cancelSave();
+		generation++;
+		loading = false;
+		blocked = false;
+		deleting = false;
+		dirty = retentionEnabled && !conversations.isEmpty();
 	}
 
 	public void record(PrivateMessage message)
@@ -114,7 +126,7 @@ public class HistoryCoordinator
 			dirty = true;
 			scheduleSave();
 		}
-		changed.run();
+		conversationsChanged.run();
 	}
 
 	private void load()
@@ -138,22 +150,24 @@ public class HistoryCoordinator
 			else
 			{
 				conversations.mergeSavedHistory(messages);
+				conversationsChanged.run();
 				status = dirty ? "Save pending." : "Local history enabled.";
 				scheduleSave();
 			}
-			changed.run();
+			storageChanged.run();
 		}, uiExecutor);
-		changed.run();
+		storageChanged.run();
 	}
 
 	private void scheduleSave()
 	{
 		if (!dirty || accountKey == null || loading || blocked || deleting || closed
-			|| (pendingSave != null && !pendingSave.isDone()))
+			|| pendingSave != null)
 		{
 			return;
 		}
 		long token = generation;
+		// A timer remains pending until its UI callback runs, even after the scheduler finishes.
 		pendingSave = scheduler.schedule(() -> uiExecutor.execute(() ->
 		{
 			if (!closed && generation == token)
@@ -188,7 +202,7 @@ public class HistoryCoordinator
 			{
 				status = dirty ? "Save pending." : "History stored locally.";
 			}
-			changed.run();
+			storageChanged.run();
 		}, uiExecutor);
 	}
 
@@ -211,6 +225,7 @@ public class HistoryCoordinator
 		blocked = true;
 		dirty = false;
 		conversations.clear();
+		conversationsChanged.run();
 		status = "Deleting saved history...";
 		storage.delete(accountKey).whenCompleteAsync((ignored, error) ->
 		{
@@ -230,9 +245,9 @@ public class HistoryCoordinator
 				status = "Saved history deleted.";
 				scheduleSave();
 			}
-			changed.run();
+			storageChanged.run();
 		}, uiExecutor);
-		changed.run();
+		storageChanged.run();
 	}
 
 	public void close()

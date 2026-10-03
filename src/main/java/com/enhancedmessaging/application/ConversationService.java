@@ -46,6 +46,11 @@ public class ConversationService
 		conversations.clear();
 	}
 
+	public boolean isEmpty()
+	{
+		return conversations.isEmpty();
+	}
+
 	public List<PrivateMessage> snapshot()
 	{
 		List<PrivateMessage> messages = new ArrayList<>();

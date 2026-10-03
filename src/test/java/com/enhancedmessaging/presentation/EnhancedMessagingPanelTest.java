@@ -23,7 +23,7 @@ public class EnhancedMessagingPanelTest
 	{
 		SwingUtilities.invokeAndWait(() ->
 		{
-			EnhancedMessagingPanel panel = new EnhancedMessagingPanel(new ConversationService());
+			EnhancedMessagingPanel panel = createPanel(new ConversationService());
 			assertTrue("Minimum panel size: " + panel.getMinimumSize(), panel.getMinimumSize().height <= 300);
 			assertTrue("Preferred panel size: " + panel.getPreferredSize(), panel.getPreferredSize().height <= 500);
 		});
@@ -35,7 +35,7 @@ public class EnhancedMessagingPanelTest
 		SwingUtilities.invokeAndWait(() ->
 		{
 			ConversationService service = new ConversationService();
-			EnhancedMessagingPanel panel = new EnhancedMessagingPanel(service);
+			EnhancedMessagingPanel panel = createPanel(service);
 			int initialMinimumHeight = panel.getMinimumSize().height;
 			int initialPreferredHeight = panel.getPreferredSize().height;
 			for (int i = 0; i < Conversation.MAX_MESSAGES; i++)
@@ -59,7 +59,7 @@ public class EnhancedMessagingPanelTest
 		{
 			ConversationService service = new ConversationService();
 			service.record(message("Alice", "Alice's message", false));
-			EnhancedMessagingPanel panel = new EnhancedMessagingPanel(service);
+			EnhancedMessagingPanel panel = createPanel(service);
 			JList<?> list = findConversationList(panel);
 			JTextArea transcript = findTranscript(panel);
 			assertNotNull(list);
@@ -89,7 +89,7 @@ public class EnhancedMessagingPanelTest
 		{
 			ConversationService service = new ConversationService();
 			service.record(message("Alice", "Private message", false));
-			EnhancedMessagingPanel panel = new EnhancedMessagingPanel(service);
+			EnhancedMessagingPanel panel = createPanel(service);
 			service.clear();
 			panel.refresh();
 
@@ -97,6 +97,11 @@ public class EnhancedMessagingPanelTest
 			assertFalse(findTranscript(panel).getText().contains("Private message"));
 			assertTrue(findTranscript(panel).getText().contains("Send or receive a private message"));
 		});
+	}
+
+	private EnhancedMessagingPanel createPanel(ConversationService service)
+	{
+		return new EnhancedMessagingPanel(service, enabled -> { }, () -> { });
 	}
 
 	private PrivateMessage message(String player, String text, boolean outgoing)

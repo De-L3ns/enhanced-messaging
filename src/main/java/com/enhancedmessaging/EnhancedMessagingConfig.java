@@ -1,5 +1,7 @@
 package com.enhancedmessaging;
 
+import com.enhancedmessaging.application.ConversationService;
+import com.enhancedmessaging.domain.Conversation;
 import net.runelite.client.config.Config;
 import net.runelite.client.config.ConfigGroup;
 import net.runelite.client.config.ConfigItem;
@@ -15,7 +17,8 @@ public interface EnhancedMessagingConfig extends Config
 		+ "Files contain player names, message text, direction and timestamps.\n"
 		+ "They are not encrypted. Anyone with access to the files can read them.\n"
 		+ "No messages are uploaded. Your current session will also be saved.\n\n"
-		+ "The latest 500 messages per player are kept for up to 100 players.\n"
+		+ "The latest " + Conversation.MAX_MESSAGES + " messages per player are kept for up to "
+		+ ConversationService.MAX_CONVERSATIONS + " players.\n"
 		+ "Saves are batched; a crash can lose the newest few seconds.\n"
 		+ "Turning this off stops saving but leaves existing files.\n"
 		+ "Use Delete saved history in the sidebar to remove them.";
