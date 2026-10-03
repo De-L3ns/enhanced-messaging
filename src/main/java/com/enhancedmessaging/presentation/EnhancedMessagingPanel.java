@@ -1,5 +1,6 @@
 package com.enhancedmessaging.presentation;
 
+import com.enhancedmessaging.EnhancedMessagingConfig;
 import com.enhancedmessaging.application.ConversationService;
 import com.enhancedmessaging.domain.Conversation;
 import com.enhancedmessaging.domain.PrivateMessage;
@@ -15,11 +16,15 @@ import java.awt.image.BufferedImage;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
+import java.util.function.Consumer;
 import javax.swing.BorderFactory;
 import javax.swing.DefaultListCellRenderer;
 import javax.swing.DefaultListModel;
+import javax.swing.JButton;
+import javax.swing.JCheckBox;
 import javax.swing.JLabel;
 import javax.swing.JList;
+import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JScrollBar;
 import javax.swing.JScrollPane;
@@ -41,9 +46,18 @@ public class EnhancedMessagingPanel extends PluginPanel
 	private final JLabel conversationTitle = new JLabel("No conversation selected");
 	private final JTextArea transcript = new JTextArea();
 	private final JScrollPane transcriptScroll = new JScrollPane(transcript);
+	private final JCheckBox retainHistory = new JCheckBox("Retain message history");
+	private final JButton deleteHistory = new JButton("Delete saved history");
+	private final JLabel storageStatus = new JLabel("Session history only.");
 	private boolean refreshing;
 
 	public EnhancedMessagingPanel(ConversationService conversationService)
+	{
+		this(conversationService, enabled -> { }, () -> { });
+	}
+
+	public EnhancedMessagingPanel(ConversationService conversationService, Consumer<Boolean> retentionChanged,
+		Runnable deleteSavedHistory)
 	{
 		super(false);
 		this.conversationService = conversationService;
@@ -102,8 +116,36 @@ public class EnhancedMessagingPanel extends PluginPanel
 		// A wrapped text area's initial minimum height can force RuneLite to enlarge the window.
 		JPanel note = new JPanel(new GridLayout(0, 1, 0, 2));
 		note.setOpaque(false);
-		for (String line : new String[]{"Session history only.", "Clears on logout or disable.",
-			"Latest 500 messages/player.", "Up to 100 players."})
+		retainHistory.setOpaque(false);
+		retainHistory.setToolTipText("Save messages locally between sessions. Files are not encrypted.");
+		retainHistory.addActionListener(event ->
+		{
+			boolean enabled = retainHistory.isSelected();
+			if (enabled && JOptionPane.showConfirmDialog(this, EnhancedMessagingConfig.STORAGE_NOTICE,
+				"Retain message history", JOptionPane.YES_NO_OPTION, JOptionPane.INFORMATION_MESSAGE) != JOptionPane.YES_OPTION)
+			{
+				retainHistory.setSelected(false);
+				return;
+			}
+			retentionChanged.accept(enabled);
+		});
+		note.add(retainHistory);
+		deleteHistory.setEnabled(false);
+		deleteHistory.addActionListener(event ->
+		{
+			if (JOptionPane.showConfirmDialog(this, "Delete saved history for this character?\n"
+				+ "This also clears the conversations currently shown.\n"
+				+ "New messages will be saved if retention remains enabled.", "Delete saved history",
+				JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE) == JOptionPane.YES_OPTION)
+			{
+				deleteSavedHistory.run();
+			}
+		});
+		note.add(deleteHistory);
+		storageStatus.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+		storageStatus.putClientProperty("html.disable", true);
+		note.add(storageStatus);
+		for (String line : new String[]{"Latest 500 messages/player.", "Up to 100 players."})
 		{
 			JLabel label = new JLabel(line);
 			label.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
@@ -111,6 +153,14 @@ public class EnhancedMessagingPanel extends PluginPanel
 		}
 		add(note, BorderLayout.SOUTH);
 		refresh();
+	}
+
+	public void setStorageState(boolean enabled, boolean canDelete, String status)
+	{
+		retainHistory.setSelected(enabled);
+		deleteHistory.setEnabled(canDelete);
+		storageStatus.setText(status);
+		storageStatus.setToolTipText(status);
 	}
 
 	public void refresh()

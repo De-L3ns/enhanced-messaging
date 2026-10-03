@@ -3,6 +3,7 @@
 ## Regualr Java development
 
 - N-tier architecture: Presentation → Application → Domain → Infrastructure
+- Keep track of the boundries above but keep the design simple
 - Building/running specificly use the javm exec commands: javm exec --jdk temurin@11 ./gradlew.bat build and javm exec --jdk temurin@11 ./gradlew.bat run
 
 ## Logging

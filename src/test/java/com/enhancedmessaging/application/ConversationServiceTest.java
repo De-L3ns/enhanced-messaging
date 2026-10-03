@@ -103,6 +103,54 @@ public class ConversationServiceTest
 		assertEquals("New session", service.getConversations().get(0).getMessages().get(0).getText());
 	}
 
+	@Test
+	public void mergingKeepsGenuineRepeatedMessagesWhileDeduplicatingPreviouslyLoadedIds()
+	{
+		ConversationService service = new ConversationService();
+		PrivateMessage saved = message("Alice", "Hello");
+		PrivateMessage fresh = message("Alice", "Hello");
+		service.record(saved);
+		service.record(fresh);
+		service.mergeSavedHistory(List.of(saved));
+
+		assertEquals(List.of(saved, fresh), service.snapshot());
+	}
+
+	@Test
+	public void mergingSavedHistoryStillEnforcesTheMessageLimit()
+	{
+		ConversationService saved = new ConversationService();
+		for (int i = 0; i < Conversation.MAX_MESSAGES; i++)
+		{
+			saved.record(message("Alice", "Saved " + i));
+		}
+		ConversationService current = new ConversationService();
+		PrivateMessage fresh = message("Alice", "Fresh message");
+		current.record(fresh);
+		current.mergeSavedHistory(saved.snapshot());
+
+		assertEquals(Conversation.MAX_MESSAGES, current.snapshot().size());
+		assertEquals("Saved 1", current.snapshot().get(0).getText());
+		assertEquals(fresh, current.snapshot().get(Conversation.MAX_MESSAGES - 1));
+	}
+
+	@Test
+	public void mergingSavedHistoryStillEnforcesTheConversationLimit()
+	{
+		ConversationService saved = new ConversationService();
+		for (int i = 0; i < ConversationService.MAX_CONVERSATIONS; i++)
+		{
+			saved.record(message("Player " + i, "Saved"));
+		}
+		ConversationService current = new ConversationService();
+		current.record(message("New player", "Fresh"));
+		current.mergeSavedHistory(saved.snapshot());
+
+		assertEquals(ConversationService.MAX_CONVERSATIONS, current.getConversations().size());
+		assertEquals("New player", current.getConversations().get(0).getPlayerName());
+		assertFalse(current.getConversations().stream().anyMatch(c -> c.getPlayerName().equals("Player 0")));
+	}
+
 	private PrivateMessage message(String playerName, String text)
 	{
 		return new PrivateMessage(playerName, text, Instant.ofEpochSecond(100), false);
