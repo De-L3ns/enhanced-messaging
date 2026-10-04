@@ -2,12 +2,15 @@ package com.enhancedmessaging.presentation;
 
 import com.enhancedmessaging.application.AvatarService;
 import com.enhancedmessaging.application.ConversationService;
+import com.enhancedmessaging.application.FriendStatusService;
 import com.enhancedmessaging.domain.Conversation;
 import java.awt.BasicStroke;
 import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Component;
 import java.awt.Dimension;
+import java.awt.Font;
+import java.awt.Graphics;
 import java.awt.Graphics2D;
 import java.awt.GridLayout;
 import java.awt.RenderingHints;
@@ -43,6 +46,7 @@ public class EnhancedMessagingPanel extends PluginPanel
 {
 	private final ConversationService conversationService;
 	private final AvatarService avatars;
+	private final FriendStatusService friends;
 	private final DefaultListModel<Conversation> conversationModel = new DefaultListModel<>();
 	private final JList<Conversation> conversationList = new JList<>(conversationModel);
 	private final JLabel conversationTitle = new JLabel("No conversation selected");
@@ -62,11 +66,13 @@ public class EnhancedMessagingPanel extends PluginPanel
 	private boolean closed;
 	private long transcriptRevision;
 
-	public EnhancedMessagingPanel(ConversationService conversationService, AvatarService avatars, Runnable deleteSavedHistory)
+	public EnhancedMessagingPanel(ConversationService conversationService, AvatarService avatars,
+		FriendStatusService friends, Runnable deleteSavedHistory)
 	{
 		super(false);
 		this.conversationService = conversationService;
 		this.avatars = avatars;
+		this.friends = friends;
 		setLayout(new BorderLayout(0, 8));
 		setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
 		setBackground(ColorScheme.DARK_GRAY_COLOR);
@@ -277,14 +283,16 @@ public class EnhancedMessagingPanel extends PluginPanel
 		if (!closed)
 		{
 			Conversation selected = conversationList.getSelectedValue();
-			conversationTitle.setIcon(selected == null ? null : iconFor(selected.getPlayerName(), false));
+			conversationTitle.setIcon(selected == null ? null : iconFor(selected.getPlayerName()));
+			conversationTitle.setToolTipText(selected == null ? null : friends.statusFor(selected.getPlayerName()).getDescription()
+				+ ". Right-click to change this player's avatar locally.");
 			conversationList.repaint();
 		}
 	}
 
-	private AvatarIcon iconFor(String player, boolean unread)
+	private AvatarIcon iconFor(String player)
 	{
-		return new AvatarIcon(avatars == null ? null : avatars.imageFor(player), unread);
+		return new AvatarIcon(avatars == null ? null : avatars.imageFor(player), friends.statusFor(player));
 	}
 
 	private void showAvatarMenu(String player, Component target, MouseEvent event)
@@ -298,7 +306,7 @@ public class EnhancedMessagingPanel extends PluginPanel
 		JMenu stocks = new JMenu("Stock avatar");
 		avatars.getStock().forEach((id, image) ->
 		{
-			JMenuItem choice = new JMenuItem(id.substring(0, 1).toUpperCase(Locale.ROOT) + id.substring(1), new AvatarIcon(image, false));
+			JMenuItem choice = new JMenuItem(id.substring(0, 1).toUpperCase(Locale.ROOT) + id.substring(1), new AvatarIcon(image));
 			choice.addActionListener(ignored ->
 			{
 				if (avatars.isCurrent(token))
@@ -348,6 +356,7 @@ public class EnhancedMessagingPanel extends PluginPanel
 	{
 		private final JLabel name = new JLabel();
 		private final JLabel count = new JLabel();
+		private final JLabel unreadBadge = new UnreadBadge();
 
 		PlayerRenderer()
 		{
@@ -359,8 +368,12 @@ public class EnhancedMessagingPanel extends PluginPanel
 			name.setIconTextGap(8);
 			count.setFont(FontManager.getDefaultFont().deriveFont(10f));
 			count.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+			JPanel trailing = new JPanel(new BorderLayout(6, 0));
+			trailing.setOpaque(false);
+			trailing.add(count, BorderLayout.CENTER);
+			trailing.add(unreadBadge, BorderLayout.EAST);
 			add(name, BorderLayout.CENTER);
-			add(count, BorderLayout.EAST);
+			add(trailing, BorderLayout.EAST);
 		}
 
 		@Override
@@ -369,12 +382,44 @@ public class EnhancedMessagingPanel extends PluginPanel
 		{
 			setBackground(selected ? ColorScheme.MEDIUM_GRAY_COLOR : ColorScheme.DARKER_GRAY_COLOR);
 			name.setText(value.getPlayerName());
-			name.setIcon(iconFor(value.getPlayerName(), value.isUnread()));
+			name.setIcon(iconFor(value.getPlayerName()));
 			count.setText(String.valueOf(value.getMessageCount()));
-			setToolTipText(value.isUnread() ? "New messages. Open this conversation to mark it read." : "Right-click to change avatar.");
+			unreadBadge.setVisible(value.isUnread());
+			String status = friends.statusFor(value.getPlayerName()).getDescription();
+			setToolTipText(status + ". " + (value.isUnread()
+				? "New messages. Open this conversation to mark it read." : "Right-click to change avatar."));
 			getAccessibleContext().setAccessibleName(value.getPlayerName() + ", " + value.getMessageCount()
-				+ " messages" + (value.isUnread() ? ", unread" : ""));
+				+ " messages, " + status + (value.isUnread() ? ", unread" : ""));
 			return this;
+		}
+	}
+
+	private static class UnreadBadge extends JLabel
+	{
+		UnreadBadge()
+		{
+			super("New", JLabel.CENTER);
+			setFont(FontManager.getDefaultFont().deriveFont(Font.BOLD, 10f));
+			setForeground(ColorScheme.DARKER_GRAY_COLOR);
+			setBorder(BorderFactory.createEmptyBorder(2, 7, 2, 7));
+		}
+
+		@Override
+		protected void paintComponent(Graphics graphics)
+		{
+			Graphics2D g = (Graphics2D) graphics.create();
+			try
+			{
+				g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+				int height = Math.min(getHeight(), getPreferredSize().height);
+				g.setColor(ColorScheme.BRAND_ORANGE);
+				g.fillRoundRect(0, (getHeight() - height) / 2, getWidth(), height, height, height);
+			}
+			finally
+			{
+				g.dispose();
+			}
+			super.paintComponent(graphics);
 		}
 	}
 

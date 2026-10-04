@@ -1,11 +1,15 @@
 package com.enhancedmessaging.presentation;
 
 import com.enhancedmessaging.application.ConversationService;
+import com.enhancedmessaging.application.FriendStatusService;
 import com.enhancedmessaging.domain.Conversation;
 import com.enhancedmessaging.domain.PrivateMessage;
+import com.enhancedmessaging.domain.FriendStatus;
 import java.awt.Component;
 import java.awt.Container;
 import java.time.Instant;
+import java.util.Map;
+import javax.swing.JComponent;
 import javax.swing.JList;
 import javax.swing.JLabel;
 import javax.swing.JTextArea;
@@ -19,6 +23,41 @@ import static org.junit.Assert.assertTrue;
 
 public class EnhancedMessagingPanelTest
 {
+	@Test
+	public void statusRefreshKeepsUnreadSelectionAndTranscript() throws Exception
+	{
+		SwingUtilities.invokeAndWait(() ->
+		{
+			ConversationService conversations = new ConversationService();
+			conversations.record(message("Alice", "Hello", false));
+			FriendStatusService friends = new FriendStatusService();
+			friends.switchAccount("account-a");
+			EnhancedMessagingPanel panel = new EnhancedMessagingPanel(conversations, null, friends, () -> { });
+			JList<?> list = findConversationList(panel);
+			Object selected = list.getSelectedValue();
+			String transcript = transcriptText(findTranscript(panel));
+			friends.update("account-a", Map.of("alice", FriendStatus.ONLINE));
+			panel.refreshAvatars();
+			assertTrue(renderSelected(list).getToolTipText().startsWith("Online."));
+			friends.update("account-a", Map.of("alice", FriendStatus.OFFLINE));
+			panel.refreshAvatars();
+			assertTrue(renderSelected(list).getToolTipText().startsWith("Offline."));
+			assertEquals(selected, list.getSelectedValue());
+			assertEquals(transcript, transcriptText(findTranscript(panel)));
+			assertTrue(conversations.getConversations().get(0).isUnread());
+			friends.switchAccount("account-b");
+			panel.refreshAvatars();
+			assertTrue(renderSelected(list).getToolTipText().startsWith("Status unavailable."));
+			panel.close();
+		});
+	}
+
+	private <T> JComponent renderSelected(JList<T> list)
+	{
+		return (JComponent) list.getCellRenderer().getListCellRendererComponent(
+			list, list.getSelectedValue(), list.getSelectedIndex(), true, false);
+	}
+
 	@Test
 	public void openingAnEmptyPanelDoesNotRequireAnOversizedClient() throws Exception
 	{
@@ -103,7 +142,7 @@ public class EnhancedMessagingPanelTest
 
 	private EnhancedMessagingPanel createPanel(ConversationService service)
 	{
-		return new EnhancedMessagingPanel(service, null, () -> { });
+		return new EnhancedMessagingPanel(service, null, new FriendStatusService(), () -> { });
 	}
 
 	private PrivateMessage message(String player, String text, boolean outgoing)
@@ -163,6 +202,26 @@ public class EnhancedMessagingPanelTest
 		return null;
 	}
 
+	private JLabel findLabel(Container parent, String text)
+	{
+		for (Component child : parent.getComponents())
+		{
+			if (child instanceof JLabel && text.equals(((JLabel) child).getText()))
+			{
+				return (JLabel) child;
+			}
+			if (child instanceof Container)
+			{
+				JLabel label = findLabel((Container) child, text);
+				if (label != null)
+				{
+					return label;
+				}
+			}
+		}
+		return null;
+	}
+
 	private String transcriptText(Container parent)
 	{
 		StringBuilder text = new StringBuilder();
@@ -193,9 +252,19 @@ public class EnhancedMessagingPanelTest
 			service.record(message("Alice", "Arrived while hidden", false));
 			EnhancedMessagingPanel panel = createPanel(service);
 			Conversation alice = service.getConversations().get(0);
+			JList<?> list = findConversationList(panel);
+			JComponent row = renderSelected(list);
+			row.setSize(220, 36);
+			layoutChildren(row);
+			JLabel badge = findLabel(row, "New");
+			assertTrue(badge.isVisible());
+			assertTrue("New pill must fit the right side of the row",
+				SwingUtilities.convertPoint(badge, 0, 0, row).x > row.getWidth() / 2
+					&& badge.getWidth() >= badge.getPreferredSize().width);
 			assertTrue(alice.isUnread());
 			panel.onActivate();
 			assertFalse(alice.isUnread());
+			assertFalse(findLabel(renderSelected(list), "New").isVisible());
 			service.record(message("Bob", "Another conversation", false));
 			panel.refresh();
 			Conversation bob = service.getConversations().get(0);
@@ -205,10 +274,12 @@ public class EnhancedMessagingPanelTest
 			service.record(message("Bob", "Already viewing Bob", false));
 			panel.refresh();
 			assertFalse(bob.isUnread());
+			assertFalse(findLabel(renderSelected(list), "New").isVisible());
 			panel.onDeactivate();
 			service.record(message("Bob", "Panel hidden again", false));
 			panel.refresh();
 			assertTrue(bob.isUnread());
+			assertTrue(findLabel(renderSelected(list), "New").isVisible());
 			panel.close();
 		});
 	}

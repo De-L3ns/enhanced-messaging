@@ -2,9 +2,12 @@ package com.enhancedmessaging;
 
 import com.enhancedmessaging.application.AvatarService;
 import com.enhancedmessaging.application.ConversationService;
+import com.enhancedmessaging.application.FriendStatusService;
 import com.enhancedmessaging.application.HistoryCoordinator;
 import com.enhancedmessaging.domain.PrivateMessage;
+import com.enhancedmessaging.domain.FriendStatus;
 import com.enhancedmessaging.infrastructure.AsyncHistoryStorage;
+import com.enhancedmessaging.infrastructure.FriendStatusReader;
 import com.enhancedmessaging.infrastructure.JsonHistoryRepository;
 import com.enhancedmessaging.infrastructure.LocalAvatarStorage;
 import com.enhancedmessaging.infrastructure.PrivateMessageMapper;
@@ -12,6 +15,8 @@ import com.enhancedmessaging.presentation.EnhancedMessagingPanel;
 import com.google.gson.Gson;
 import com.google.inject.Provides;
 import java.util.Objects;
+import java.util.Collections;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.function.Consumer;
@@ -21,6 +26,7 @@ import javax.swing.SwingUtilities;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Client;
 import net.runelite.api.GameState;
+import net.runelite.api.FriendContainer;
 import net.runelite.api.events.ChatMessage;
 import net.runelite.api.events.GameStateChanged;
 import net.runelite.api.events.GameTick;
@@ -110,7 +116,7 @@ public class EnhancedMessagingPlugin extends Plugin
 					JOptionPane.showMessageDialog(session.panel, message, "Avatar", JOptionPane.ERROR_MESSAGE);
 				}
 			});
-			session.panel = new EnhancedMessagingPanel(session.conversations, session.avatars,
+			session.panel = new EnhancedMessagingPanel(session.conversations, session.avatars, session.friends,
 				() -> session.history.deleteHistory());
 			session.history = new HistoryCoordinator(session.conversations, storage, scheduler,
 				SwingUtilities::invokeLater, () ->
@@ -157,12 +163,17 @@ public class EnhancedMessagingPlugin extends Plugin
 			return;
 		}
 		String account = configManager.getRSProfileKey();
+		if (!Objects.equals(session.requestedAccount, account))
+		{
+			session.lastFriendStatuses = null;
+		}
 		session.requestedAccount = account;
 		queue(session, current ->
 		{
 			switchAccount(current, account);
 			current.history.record(message);
 		});
+		refreshFriendStatuses(session, account);
 	}
 
 	@Subscribe
@@ -174,16 +185,37 @@ public class EnhancedMessagingPlugin extends Plugin
 			if (session != null)
 			{
 				session.requestedAccount = null;
+				session.lastFriendStatuses = null;
 					queue(session, current ->
 					{
 						current.avatars.switchAccount(null);
+						current.friends.switchAccount(null);
 						current.history.logout();
+						current.panel.refreshAvatars();
 					});
 			}
 		}
 		else if (gameStateChanged.getGameState() == GameState.LOGGED_IN)
 		{
 			synchronizeAccount(activeSession);
+		}
+		else if (gameStateChanged.getGameState() == GameState.HOPPING
+			|| gameStateChanged.getGameState() == GameState.CONNECTION_LOST
+			|| gameStateChanged.getGameState() == GameState.LOGGING_IN)
+		{
+			Session session = activeSession;
+			if (session != null)
+			{
+				session.lastFriendStatuses = null;
+				String account = session.requestedAccount;
+				queue(session, current ->
+				{
+					if (current.friends.update(account, Collections.emptyMap()))
+					{
+						current.panel.refreshAvatars();
+					}
+				});
+			}
 		}
 	}
 
@@ -249,13 +281,37 @@ public class EnhancedMessagingPlugin extends Plugin
 		if (!Objects.equals(session.requestedAccount, account))
 		{
 			session.requestedAccount = account;
+			session.lastFriendStatuses = null;
 			queue(session, current -> switchAccount(current, account));
+		}
+		refreshFriendStatuses(session, account);
+	}
+
+	private void refreshFriendStatuses(Session session, String account)
+	{
+		if (client.getGameState() != GameState.LOGGED_IN || account == null)
+		{
+			return;
+		}
+		FriendContainer container = client.getFriendContainer();
+		Map<String, FriendStatus> snapshot = FriendStatusReader.snapshot(container == null ? null : container.getMembers());
+		if (!snapshot.equals(session.lastFriendStatuses))
+		{
+			session.lastFriendStatuses = snapshot;
+			queue(session, current ->
+			{
+				if (current.friends.update(account, snapshot))
+				{
+					current.panel.refreshAvatars();
+				}
+			});
 		}
 	}
 
 	private void switchAccount(Session session, String account)
 	{
 		session.avatars.switchAccount(account);
+		session.friends.switchAccount(account);
 		session.history.switchAccount(account);
 		session.panel.refreshAvatars();
 	}
@@ -264,6 +320,7 @@ public class EnhancedMessagingPlugin extends Plugin
 	{
 		session.panel.close();
 		session.avatars.close();
+		session.friends.close();
 		session.history.close();
 	}
 
@@ -284,6 +341,9 @@ public class EnhancedMessagingPlugin extends Plugin
 	private static class Session
 	{
 		private final ConversationService conversations = new ConversationService();
+		private final FriendStatusService friends = new FriendStatusService();
+		// Only the client thread reads and writes this snapshot.
+		private Map<String, FriendStatus> lastFriendStatuses;
 		private volatile String requestedAccount;
 		private HistoryCoordinator history;
 		private AvatarService avatars;

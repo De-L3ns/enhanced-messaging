@@ -1,5 +1,6 @@
 package com.enhancedmessaging.presentation;
 
+import com.enhancedmessaging.domain.FriendStatus;
 import java.awt.Color;
 import java.awt.Component;
 import java.awt.Graphics;
@@ -12,12 +13,17 @@ import net.runelite.client.ui.ColorScheme;
 final class AvatarIcon implements Icon
 {
 	private final BufferedImage image;
-	private final boolean unread;
+	private final FriendStatus status;
 
-	AvatarIcon(BufferedImage image, boolean unread)
+	AvatarIcon(BufferedImage image)
+	{
+		this(image, FriendStatus.UNKNOWN);
+	}
+
+	AvatarIcon(BufferedImage image, FriendStatus status)
 	{
 		this.image = image;
-		this.unread = unread;
+		this.status = status;
 	}
 
 	@Override
@@ -44,11 +50,12 @@ final class AvatarIcon implements Icon
 				g.drawImage(image, 0, 2, 24, 24, null);
 			}
 			g.setClip(originalClip);
-			if (unread)
+			if (status != FriendStatus.UNKNOWN)
 			{
-				g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-				g.setColor(ColorScheme.BRAND_ORANGE);
-				g.fillOval(19, 0, 7, 7);
+				g.setColor(ColorScheme.DARK_GRAY_COLOR);
+				g.fillOval(17, 17, 9, 9);
+				g.setColor(status == FriendStatus.ONLINE ? new Color(70, 190, 90) : Color.GRAY);
+				g.fillOval(18, 18, 7, 7);
 			}
 		}
 		finally

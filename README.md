@@ -40,10 +40,16 @@ Build with `javm exec --jdk temurin@11 ./gradlew.bat build` and launch the
 development client with `javm exec --jdk temurin@11 ./gradlew.bat run`.
 
 The sidebar uses the standard RuneLite background and message font, with yellow
-RuneScape names and small message boxes. An orange avatar dot indicates an
+RuneScape names and small message boxes. An orange **New** pill at the right of a conversation row indicates an
 incoming message in a conversation you are not viewing. Opening that conversation
-clears the dot. Messages received while its sidebar view is hidden remain unread;
+clears the pill. Messages received while its sidebar view is hidden remain unread;
 restored history is not marked new. Unread state lasts for the current session.
+
+A small orb at the bottom-right of a chat avatar mirrors your friend list:
+green means online, grey means offline. Players outside your friend list or with
+unavailable status have no orb. The **New** pill stays separate from the avatar.
+Status updates on game ticks and is kept only in memory; logout, account changes,
+and connection interruptions clear it. Hidden online status cannot be detected.
 
 Right-click a player in the list or the conversation heading to choose a stock
 avatar, import a PNG/JPEG, or reset their avatar. Imports are local to your client,
