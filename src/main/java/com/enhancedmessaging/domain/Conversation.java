@@ -41,6 +41,18 @@ public class Conversation
 		return messages.size();
 	}
 
+	public List<PrivateMessage> getRecentMessages(int count)
+	{
+		List<PrivateMessage> recent = new ArrayList<>();
+		java.util.Iterator<PrivateMessage> iterator = messages.descendingIterator();
+		while (iterator.hasNext() && recent.size() < count)
+		{
+			recent.add(iterator.next());
+		}
+		Collections.reverse(recent);
+		return Collections.unmodifiableList(recent);
+	}
+
 	public void markUnread()
 	{
 		unread = true;

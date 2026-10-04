@@ -17,6 +17,7 @@ public class ConversationService
 	public static final int MAX_CONVERSATIONS = 100;
 
 	private final Map<String, Conversation> conversations = new LinkedHashMap<>();
+	private String latestIncomingKey;
 
 	public void record(PrivateMessage message)
 	{
@@ -35,12 +36,19 @@ public class ConversationService
 		if (live && !message.isOutgoing())
 		{
 			conversation.markUnread();
+			latestIncomingKey = key;
 		}
 		conversations.put(key, conversation);
 		if (conversations.size() > MAX_CONVERSATIONS)
 		{
 			conversations.remove(conversations.keySet().iterator().next());
 		}
+		if (!conversations.containsKey(latestIncomingKey)) { latestIncomingKey = null; }
+	}
+
+	public Conversation getLatestIncomingConversation()
+	{
+		return conversations.get(latestIncomingKey);
 	}
 
 	public List<Conversation> getConversations()
@@ -53,6 +61,7 @@ public class ConversationService
 	public void clear()
 	{
 		conversations.clear();
+		latestIncomingKey = null;
 	}
 
 	public boolean isEmpty()
@@ -73,6 +82,7 @@ public class ConversationService
 	public void mergeSavedHistory(List<PrivateMessage> saved)
 	{
 		List<PrivateMessage> current = snapshot();
+		String latestIncoming = latestIncomingKey;
 		Set<String> unread = new HashSet<>();
 		conversations.forEach((key, conversation) ->
 		{
@@ -97,6 +107,8 @@ public class ConversationService
 				record(message, false);
 			}
 		}
+		// Restoring saved messages must not displace a live sender or invent a new one.
+		latestIncomingKey = conversations.containsKey(latestIncoming) ? latestIncoming : null;
 		unread.forEach(key ->
 		{
 			Conversation conversation = conversations.get(key);

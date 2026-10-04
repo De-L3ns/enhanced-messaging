@@ -2,6 +2,8 @@ package com.enhancedmessaging.presentation;
 
 import com.enhancedmessaging.application.ConversationService;
 import com.enhancedmessaging.application.FriendStatusService;
+import com.enhancedmessaging.application.PinService;
+import com.enhancedmessaging.application.PinStorage;
 import com.enhancedmessaging.domain.Conversation;
 import com.enhancedmessaging.domain.PrivateMessage;
 import com.enhancedmessaging.domain.FriendStatus;
@@ -9,10 +11,14 @@ import java.awt.Component;
 import java.awt.Container;
 import java.time.Instant;
 import java.util.Map;
+import java.util.List;
+import java.util.concurrent.CompletableFuture;
 import javax.swing.JComponent;
 import javax.swing.JList;
 import javax.swing.JLabel;
 import javax.swing.JTextArea;
+import javax.swing.JScrollPane;
+import javax.swing.JScrollBar;
 import javax.swing.SwingUtilities;
 import org.junit.Test;
 
@@ -23,6 +29,44 @@ import static org.junit.Assert.assertTrue;
 
 public class EnhancedMessagingPanelTest
 {
+	@Test
+	public void widgetNavigationSelectsTheExactChatAndEmptyPinsRemainManageable() throws Exception
+	{
+		SwingUtilities.invokeAndWait(() ->
+		{
+			ConversationService conversations = new ConversationService();
+			conversations.record(message("Alice", "Hello", false));
+			conversations.record(message("Bob", "Hi", false));
+			PinService pins = new PinService(new PinStorage()
+			{
+				public CompletableFuture<List<String>> load(String account) { return CompletableFuture.completedFuture(List.of("Carol")); }
+				public CompletableFuture<Void> save(String account, List<String> players) { return CompletableFuture.completedFuture(null); }
+			}, Runnable::run, () -> { }, ignored -> { });
+			pins.switchAccount("a");
+			EnhancedMessagingPanel panel = createPanel(conversations);
+			panel.setWidgetActions(pins, () -> { });
+			panel.refresh();
+			assertEquals(3, findConversationList(panel).getModel().getSize());
+			panel.selectConversation("alice");
+			assertEquals("Alice", ((Conversation) findConversationList(panel).getSelectedValue()).getPlayerName());
+			assertTrue(conversations.getConversations().stream().filter(c -> c.getPlayerName().equals("Alice")).findFirst().get().isUnread());
+			panel.onActivate();
+			assertFalse(conversations.getConversations().stream().filter(c -> c.getPlayerName().equals("Alice")).findFirst().get().isUnread());
+			panel.selectConversation("Carol");
+			assertEquals("Carol", ((Conversation) findConversationList(panel).getSelectedValue()).getPlayerName());
+			assertTrue(transcriptText(findTranscript(panel)).contains("Send or receive"));
+			for (int i = 0; i < ConversationService.MAX_CONVERSATIONS; i++)
+			{
+				conversations.record(message("Player " + i, "Keep this history", false));
+			}
+			List<Conversation> before = conversations.getConversations();
+			panel.selectConversation("Carol");
+			assertEquals("Opening an empty pin must not evict message history", before, conversations.getConversations());
+			assertEquals(ConversationService.MAX_CONVERSATIONS + 1, findConversationList(panel).getModel().getSize());
+			panel.close();
+		});
+	}
+
 	@Test
 	public void statusRefreshKeepsUnreadSelectionAndTranscript() throws Exception
 	{
@@ -118,8 +162,38 @@ public class EnhancedMessagingPanelTest
 
 			service.record(message("Bob", "My reply", true));
 			panel.refresh();
-			assertTrue(transcriptText(transcript).contains("You"));
+			assertFalse(transcriptText(transcript).contains("You"));
 			assertTrue(transcriptText(transcript).contains("My reply"));
+		});
+	}
+
+	@Test
+	public void receivedMessagesScrollToTheBottomEvenWhenReadingOlderMessages() throws Exception
+	{
+		ConversationService service = new ConversationService();
+		EnhancedMessagingPanel[] panel = new EnhancedMessagingPanel[1];
+		JScrollBar[] bar = new JScrollBar[1];
+		SwingUtilities.invokeAndWait(() ->
+		{
+			for (int i = 0; i < 40; i++) { service.record(message("Alice", "Message " + i, false)); }
+			panel[0] = createPanel(service);
+			panel[0].setSize(230, 400);
+			layoutChildren(panel[0]);
+			bar[0] = ((JScrollPane) findTranscript(panel[0]).getParent().getParent()).getVerticalScrollBar();
+		});
+		SwingUtilities.invokeAndWait(() ->
+		{
+			bar[0].setValue(0);
+			assertTrue(bar[0].getMaximum() > bar[0].getVisibleAmount());
+			service.record(message("Alice", "The latest incoming message", false));
+			panel[0].refresh();
+			layoutChildren(panel[0]);
+		});
+		SwingUtilities.invokeAndWait(() ->
+		{
+			assertEquals(bar[0].getMaximum(), bar[0].getValue() + bar[0].getVisibleAmount());
+			assertTrue(transcriptText(findTranscript(panel[0])).contains("The latest incoming message"));
+			panel[0].close();
 		});
 	}
 

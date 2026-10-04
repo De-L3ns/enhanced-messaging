@@ -3,6 +3,7 @@ package com.enhancedmessaging.presentation;
 import com.enhancedmessaging.application.AvatarService;
 import com.enhancedmessaging.application.ConversationService;
 import com.enhancedmessaging.application.FriendStatusService;
+import com.enhancedmessaging.application.PinService;
 import com.enhancedmessaging.domain.Conversation;
 import java.awt.BasicStroke;
 import java.awt.BorderLayout;
@@ -20,6 +21,7 @@ import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.awt.image.BufferedImage;
 import java.util.Collections;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import javax.swing.BorderFactory;
@@ -65,6 +67,8 @@ public class EnhancedMessagingPanel extends PluginPanel
 	private boolean viewing;
 	private boolean closed;
 	private long transcriptRevision;
+	private PinService pins;
+	private Runnable readChanged = () -> { };
 
 	public EnhancedMessagingPanel(ConversationService conversationService, AvatarService avatars,
 		FriendStatusService friends, Runnable deleteSavedHistory)
@@ -194,6 +198,28 @@ public class EnhancedMessagingPanel extends PluginPanel
 		storageStatus.setToolTipText(status);
 	}
 
+	public void setWidgetActions(PinService pins, Runnable readChanged)
+	{
+		this.pins = pins;
+		this.readChanged = readChanged;
+	}
+
+	public void selectConversation(String player)
+	{
+		if (closed) { return; }
+		refresh();
+		for (int i = 0; i < conversationModel.size(); i++)
+		{
+			if (conversationModel.get(i).getPlayerName().equalsIgnoreCase(player))
+			{
+				conversationList.setSelectedIndex(i);
+				conversationList.ensureIndexIsVisible(i);
+				showConversation(true);
+				break;
+			}
+		}
+	}
+
 	@Override
 	public void onActivate()
 	{
@@ -230,7 +256,17 @@ public class EnhancedMessagingPanel extends PluginPanel
 			return;
 		}
 		Conversation previous = conversationList.getSelectedValue();
-		List<Conversation> conversations = conversationService.getConversations();
+		List<Conversation> conversations = new ArrayList<>(conversationService.getConversations());
+		if (pins != null)
+		{
+			for (String player : pins.getPlayers())
+			{
+				if (conversations.stream().noneMatch(chat -> chat.getPlayerName().equalsIgnoreCase(player)))
+				{
+					conversations.add(new Conversation(player));
+				}
+			}
+		}
 		refreshing = true;
 		conversationModel.clear();
 		int selectedIndex = 0;
@@ -257,14 +293,14 @@ public class EnhancedMessagingPanel extends PluginPanel
 		conversationTitle.setText(conversation == null ? "No conversation selected" : conversation.getPlayerName());
 		if (viewing && conversation != null)
 		{
+			boolean unread = conversation.isUnread();
 			conversation.markRead();
 			conversationList.repaint();
+			if (unread) { readChanged.run(); }
 		}
 		refreshAvatars();
 		JScrollBar scrollBar = transcriptScroll.getVerticalScrollBar();
-		boolean atBottom = scrollBar.getValue() + scrollBar.getVisibleAmount() >= scrollBar.getMaximum() - 8;
-		int previousScroll = scrollBar.getValue();
-		if (!transcript.setMessages(conversation == null ? Collections.emptyList() : conversation.getMessages()))
+		if (!transcript.setMessages(conversation == null ? Collections.emptyList() : conversation.getMessages()) && !selectionChanged)
 		{
 			return;
 		}
@@ -273,7 +309,8 @@ public class EnhancedMessagingPanel extends PluginPanel
 		{
 			if (!closed && revision == transcriptRevision)
 			{
-				scrollBar.setValue(selectionChanged || atBottom ? scrollBar.getMaximum() : previousScroll);
+				transcriptScroll.validate();
+				scrollBar.setValue(scrollBar.getMaximum());
 			}
 		});
 	}
@@ -303,6 +340,19 @@ public class EnhancedMessagingPanel extends PluginPanel
 		}
 		long token = avatars.contextToken();
 		JPopupMenu menu = new JPopupMenu();
+		if (pins != null)
+		{
+			long pinToken = pins.contextToken();
+			JMenuItem pin = new JMenuItem(pins.isPinned(player) ? "Unpin from widget" : "Pin to widget");
+			pin.setEnabled(pins.canChange());
+			pin.setToolTipText("Pins and their order are saved locally per game character, independently of message retention.");
+			pin.addActionListener(ignored ->
+			{
+				if (pins.isCurrent(pinToken)) { pins.toggle(player); }
+			});
+			menu.add(pin);
+			menu.addSeparator();
+		}
 		JMenu stocks = new JMenu("Stock avatar");
 		avatars.getStock().forEach((id, image) ->
 		{

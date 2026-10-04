@@ -2,11 +2,11 @@ package com.enhancedmessaging.presentation;
 
 import com.enhancedmessaging.domain.PrivateMessage;
 import java.awt.BorderLayout;
-import java.awt.Color;
 import java.awt.Component;
 import java.awt.Dimension;
 import java.awt.Rectangle;
 import java.time.ZoneId;
+import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -29,6 +29,7 @@ final class MessageTranscript extends JPanel implements Scrollable
 {
 	private static final DateTimeFormatter TIME_FORMAT = DateTimeFormatter.ofPattern("HH:mm:ss")
 		.withZone(ZoneId.systemDefault());
+	private static final DateTimeFormatter DATE_FORMAT = DateTimeFormatter.ofPattern("d MMM yyyy");
 	private List<PrivateMessage> shown = Collections.emptyList();
 	private Map<String, MessageBox> boxes = new LinkedHashMap<>();
 	private final JTextArea empty = textArea("Send or receive a private message in-game to start a conversation.");
@@ -53,8 +54,19 @@ final class MessageTranscript extends JPanel implements Scrollable
 		{
 			add(empty);
 		}
+		LocalDate previousDate = null;
 		for (PrivateMessage message : messages)
 		{
+			LocalDate date = message.getTimestamp().atZone(ZoneId.systemDefault()).toLocalDate();
+			if (!date.equals(previousDate))
+			{
+				JLabel separator = new JLabel(DATE_FORMAT.format(date), SwingConstants.CENTER);
+				separator.setFont(FontManager.getDefaultFont().deriveFont(10f));
+				separator.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+				separator.setBorder(BorderFactory.createEmptyBorder(4, 0, 4, 0));
+				add(separator);
+				previousDate = date;
+			}
 			MessageBox box = boxes.get(message.getId());
 			if (box == null)
 			{
@@ -82,16 +94,20 @@ final class MessageTranscript extends JPanel implements Scrollable
 		for (Component component : getComponents())
 		{
 			boolean outgoing = component instanceof MessageBox && ((MessageBox) component).outgoing;
-			int boxWidth = component == empty ? available : Math.round(available * (outgoing ? .88f : .94f));
+			int boxWidth = component instanceof MessageBox ? Math.round(available * (outgoing ? .88f : .94f)) : available;
 			int height;
 			if (component == empty)
 			{
 				empty.setSize(boxWidth, Short.MAX_VALUE);
 				height = empty.getPreferredSize().height;
 			}
-			else
+			else if (component instanceof MessageBox)
 			{
 				height = ((MessageBox) component).heightFor(boxWidth);
+			}
+			else
+			{
+				height = component.getPreferredSize().height;
 			}
 			if (apply)
 			{
@@ -174,17 +190,13 @@ final class MessageTranscript extends JPanel implements Scrollable
 		{
 			super(new BorderLayout(0, 4));
 			outgoing = message.isOutgoing();
-			setBackground(outgoing ? new Color(59, 59, 59) : new Color(50, 50, 50));
+			setBackground(outgoing ? MessageStyle.OUTGOING_BACKGROUND : MessageStyle.INCOMING_BACKGROUND);
+			setToolTipText(outgoing ? "Outgoing message" : "Incoming message");
 			setBorder(BorderFactory.createEmptyBorder(7, 8, 7, 8));
 			metadata.setOpaque(false);
-			JLabel name = new JLabel(outgoing ? "You" : message.getPlayerName());
-			name.putClientProperty("html.disable", true);
-			name.setFont(FontManager.getRunescapeSmallFont());
-			name.setForeground(Color.YELLOW);
 			JLabel time = new JLabel(TIME_FORMAT.format(message.getTimestamp()), SwingConstants.RIGHT);
 			time.setFont(FontManager.getDefaultFont().deriveFont(10f));
 			time.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
-			metadata.add(name, BorderLayout.CENTER);
 			metadata.add(time, BorderLayout.EAST);
 			add(metadata, BorderLayout.NORTH);
 			body = textArea(message.getText());
