@@ -11,7 +11,7 @@ enabled. World hops retain it; logout, plugin disable, and restart clear the
 display. History begins when the plugin is enabled.
 
 To keep conversations between sessions, enable **Retain message history** in
-the sidebar or plugin settings. A confirmation explains what is saved before
+the plugin's RuneLite configuration. A confirmation explains what is saved before
 you enable it. The current session is included. Saved history is restored when
 you log in to the same game character with retention enabled.
 
@@ -38,3 +38,23 @@ explicitly deleted. Storage errors are shown in the sidebar.
 
 Build with `javm exec --jdk temurin@11 ./gradlew.bat build` and launch the
 development client with `javm exec --jdk temurin@11 ./gradlew.bat run`.
+
+The sidebar uses the standard RuneLite background and message font, with yellow
+RuneScape names and small message boxes. An orange avatar dot indicates an
+incoming message in a conversation you are not viewing. Opening that conversation
+clears the dot. Messages received while its sidebar view is hidden remain unread;
+restored history is not marked new. Unread state lasts for the current session.
+
+Right-click a player in the list or the conversation heading to choose a stock
+avatar, import a PNG/JPEG, or reset their avatar. Imports are local to your client,
+and assignments are separate for each logged-in game character. They remain when
+message history is deleted. Images must be at most 2 MiB and 2048 × 2048 pixels;
+the plugin center-crops them to 48 × 48 and keeps a PNG copy under
+`.runelite/plugin-data/enhanced-messaging/avatars/`. Moving the original file does
+not break the avatar. Reset removes the saved assignment and restores the default.
+Files use hashed character/player keys and contain only the small avatar image.
+
+Stock artwork is bundled in `src/main/resources/com/enhancedmessaging/avatars/`
+as `default.png`, `knight.png`, `mage.png`, `ranger.png`, `zuk.png`, and `jad.png`. Each asset is an
+optimized 48 × 48 PNG, displayed in a 24-pixel circle. All image reads, imports,
+and writes run in the background; displayed avatars are cached.

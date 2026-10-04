@@ -1,10 +1,12 @@
 package com.enhancedmessaging;
 
+import com.enhancedmessaging.application.AvatarService;
 import com.enhancedmessaging.application.ConversationService;
 import com.enhancedmessaging.application.HistoryCoordinator;
 import com.enhancedmessaging.domain.PrivateMessage;
 import com.enhancedmessaging.infrastructure.AsyncHistoryStorage;
 import com.enhancedmessaging.infrastructure.JsonHistoryRepository;
+import com.enhancedmessaging.infrastructure.LocalAvatarStorage;
 import com.enhancedmessaging.infrastructure.PrivateMessageMapper;
 import com.enhancedmessaging.presentation.EnhancedMessagingPanel;
 import com.google.gson.Gson;
@@ -14,6 +16,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.function.Consumer;
 import javax.inject.Inject;
+import javax.swing.JOptionPane;
 import javax.swing.SwingUtilities;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Client;
@@ -68,6 +71,7 @@ public class EnhancedMessagingPlugin extends Plugin
 	private ScheduledExecutorService scheduler;
 
 	private AsyncHistoryStorage storage;
+	private LocalAvatarStorage avatarStorage;
 	private volatile Session activeSession;
 
 	@Provides
@@ -83,6 +87,7 @@ public class EnhancedMessagingPlugin extends Plugin
 		{
 			storage = new AsyncHistoryStorage(new JsonHistoryRepository(this::getPluginDirectory, gson),
 				httpClient.dispatcher().executorService());
+			avatarStorage = new LocalAvatarStorage(this::getPluginDirectory, httpClient.dispatcher().executorService());
 		}
 		Session session = new Session();
 		activeSession = session;
@@ -92,13 +97,25 @@ public class EnhancedMessagingPlugin extends Plugin
 			{
 				return;
 			}
-			session.panel = new EnhancedMessagingPanel(session.conversations, enabled ->
-				configManager.setConfiguration(EnhancedMessagingConfig.GROUP, EnhancedMessagingConfig.RETAIN_HISTORY, enabled),
+			session.avatars = new AvatarService(avatarStorage, SwingUtilities::invokeLater, () ->
+			{
+				if (session.panel != null)
+				{
+					session.panel.refreshAvatars();
+				}
+			}, message ->
+			{
+				if (activeSession == session)
+				{
+					JOptionPane.showMessageDialog(session.panel, message, "Avatar", JOptionPane.ERROR_MESSAGE);
+				}
+			});
+			session.panel = new EnhancedMessagingPanel(session.conversations, session.avatars,
 				() -> session.history.deleteHistory());
 			session.history = new HistoryCoordinator(session.conversations, storage, scheduler,
 				SwingUtilities::invokeLater, () ->
 				{
-					session.panel.setStorageState(session.history.isRetentionEnabled(), session.history.canDelete(),
+					session.panel.setStorageState(session.history.canDelete(),
 						session.history.getStatus());
 				}, session.panel::refresh);
 			session.history.setRetentionEnabled(config.retainHistory());
@@ -123,7 +140,7 @@ public class EnhancedMessagingPlugin extends Plugin
 		{
 			if (session != null && session.history != null)
 			{
-				session.history.close();
+				closeSession(session);
 				clientToolbar.removeNavigation(session.navigationButton);
 			}
 		});
@@ -143,7 +160,7 @@ public class EnhancedMessagingPlugin extends Plugin
 		session.requestedAccount = account;
 		queue(session, current ->
 		{
-			current.history.switchAccount(account);
+			switchAccount(current, account);
 			current.history.record(message);
 		});
 	}
@@ -157,7 +174,11 @@ public class EnhancedMessagingPlugin extends Plugin
 			if (session != null)
 			{
 				session.requestedAccount = null;
-				queue(session, current -> current.history.logout());
+					queue(session, current ->
+					{
+						current.avatars.switchAccount(null);
+						current.history.logout();
+					});
 			}
 		}
 		else if (gameStateChanged.getGameState() == GameState.LOGGED_IN)
@@ -205,9 +226,10 @@ public class EnhancedMessagingPlugin extends Plugin
 			{
 				if (session.history != null)
 				{
-					session.history.close();
+					closeSession(session);
 				}
-			}, SwingUtilities::invokeLater).thenCompose(ignored -> storage.drain()));
+			}, SwingUtilities::invokeLater).thenCompose(ignored ->
+				CompletableFuture.allOf(storage.drain(), avatarStorage.drain())));
 		}
 	}
 
@@ -227,8 +249,22 @@ public class EnhancedMessagingPlugin extends Plugin
 		if (!Objects.equals(session.requestedAccount, account))
 		{
 			session.requestedAccount = account;
-			queue(session, current -> current.history.switchAccount(account));
+			queue(session, current -> switchAccount(current, account));
 		}
+	}
+
+	private void switchAccount(Session session, String account)
+	{
+		session.avatars.switchAccount(account);
+		session.history.switchAccount(account);
+		session.panel.refreshAvatars();
+	}
+
+	private void closeSession(Session session)
+	{
+		session.panel.close();
+		session.avatars.close();
+		session.history.close();
 	}
 
 	private void queue(Session session, Consumer<Session> operation)
@@ -250,6 +286,7 @@ public class EnhancedMessagingPlugin extends Plugin
 		private final ConversationService conversations = new ConversationService();
 		private volatile String requestedAccount;
 		private HistoryCoordinator history;
+		private AvatarService avatars;
 		private EnhancedMessagingPanel panel;
 		private NavigationButton navigationButton;
 	}

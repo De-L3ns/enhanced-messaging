@@ -7,6 +7,7 @@ import java.awt.Component;
 import java.awt.Container;
 import java.time.Instant;
 import javax.swing.JList;
+import javax.swing.JLabel;
 import javax.swing.JTextArea;
 import javax.swing.SwingUtilities;
 import org.junit.Test;
@@ -61,24 +62,25 @@ public class EnhancedMessagingPanelTest
 			service.record(message("Alice", "Alice's message", false));
 			EnhancedMessagingPanel panel = createPanel(service);
 			JList<?> list = findConversationList(panel);
-			JTextArea transcript = findTranscript(panel);
+			MessageTranscript transcript = findTranscript(panel);
 			assertNotNull(list);
 			assertNotNull(transcript);
 
 			service.record(message("Bob", "Bob's message", false));
 			panel.refresh();
 			assertEquals("Alice", ((Conversation) list.getSelectedValue()).getPlayerName());
-			assertTrue(transcript.getText().contains("Alice's message"));
-			assertFalse(transcript.getText().contains("Bob's message"));
+			assertTrue(transcriptText(transcript).contains("Alice's message"));
+			assertFalse(transcriptText(transcript).contains("Bob's message"));
 
 			list.setSelectedIndex(0);
 			assertEquals("Bob", ((Conversation) list.getSelectedValue()).getPlayerName());
-			assertTrue(transcript.getText().contains("Bob's message"));
-			assertFalse(transcript.getText().contains("Alice's message"));
+			assertTrue(transcriptText(transcript).contains("Bob's message"));
+			assertFalse(transcriptText(transcript).contains("Alice's message"));
 
 			service.record(message("Bob", "My reply", true));
 			panel.refresh();
-			assertTrue(transcript.getText().contains("You:\nMy reply"));
+			assertTrue(transcriptText(transcript).contains("You"));
+			assertTrue(transcriptText(transcript).contains("My reply"));
 		});
 	}
 
@@ -94,14 +96,14 @@ public class EnhancedMessagingPanelTest
 			panel.refresh();
 
 			assertEquals(0, findConversationList(panel).getModel().getSize());
-			assertFalse(findTranscript(panel).getText().contains("Private message"));
-			assertTrue(findTranscript(panel).getText().contains("Send or receive a private message"));
+			assertFalse(transcriptText(findTranscript(panel)).contains("Private message"));
+			assertTrue(transcriptText(findTranscript(panel)).contains("Send or receive a private message"));
 		});
 	}
 
 	private EnhancedMessagingPanel createPanel(ConversationService service)
 	{
-		return new EnhancedMessagingPanel(service, enabled -> { }, () -> { });
+		return new EnhancedMessagingPanel(service, null, () -> { });
 	}
 
 	private PrivateMessage message(String player, String text, boolean outgoing)
@@ -141,17 +143,17 @@ public class EnhancedMessagingPanelTest
 		return null;
 	}
 
-	private JTextArea findTranscript(Container parent)
+	private MessageTranscript findTranscript(Container parent)
 	{
 		for (Component child : parent.getComponents())
 		{
-			if (child instanceof JTextArea && child.isFocusable())
+			if (child instanceof MessageTranscript)
 			{
-				return (JTextArea) child;
+				return (MessageTranscript) child;
 			}
 			if (child instanceof Container)
 			{
-				JTextArea area = findTranscript((Container) child);
+				MessageTranscript area = findTranscript((Container) child);
 				if (area != null)
 				{
 					return area;
@@ -159,5 +161,55 @@ public class EnhancedMessagingPanelTest
 			}
 		}
 		return null;
+	}
+
+	private String transcriptText(Container parent)
+	{
+		StringBuilder text = new StringBuilder();
+		for (Component child : parent.getComponents())
+		{
+			if (child instanceof JTextArea)
+			{
+				text.append(((JTextArea) child).getText()).append('\n');
+			}
+			else if (child instanceof JLabel)
+			{
+				text.append(((JLabel) child).getText()).append('\n');
+			}
+			else if (child instanceof Container)
+			{
+				text.append(transcriptText((Container) child));
+			}
+		}
+		return text.toString();
+	}
+
+	@Test
+	public void unreadOnlyClearsWhenTheSelectedConversationIsVisible() throws Exception
+	{
+		SwingUtilities.invokeAndWait(() ->
+		{
+			ConversationService service = new ConversationService();
+			service.record(message("Alice", "Arrived while hidden", false));
+			EnhancedMessagingPanel panel = createPanel(service);
+			Conversation alice = service.getConversations().get(0);
+			assertTrue(alice.isUnread());
+			panel.onActivate();
+			assertFalse(alice.isUnread());
+			service.record(message("Bob", "Another conversation", false));
+			panel.refresh();
+			Conversation bob = service.getConversations().get(0);
+			assertTrue(bob.isUnread());
+			findConversationList(panel).setSelectedIndex(0);
+			assertFalse(bob.isUnread());
+			service.record(message("Bob", "Already viewing Bob", false));
+			panel.refresh();
+			assertFalse(bob.isUnread());
+			panel.onDeactivate();
+			service.record(message("Bob", "Panel hidden again", false));
+			panel.refresh();
+			assertTrue(bob.isUnread());
+			panel.close();
+		});
 	}
 }

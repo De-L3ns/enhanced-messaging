@@ -1,9 +1,8 @@
 package com.enhancedmessaging.presentation;
 
-import com.enhancedmessaging.EnhancedMessagingConfig;
+import com.enhancedmessaging.application.AvatarService;
 import com.enhancedmessaging.application.ConversationService;
 import com.enhancedmessaging.domain.Conversation;
-import com.enhancedmessaging.domain.PrivateMessage;
 import java.awt.BasicStroke;
 import java.awt.BorderLayout;
 import java.awt.Color;
@@ -12,119 +11,159 @@ import java.awt.Dimension;
 import java.awt.Graphics2D;
 import java.awt.GridLayout;
 import java.awt.RenderingHints;
+import java.awt.event.HierarchyEvent;
+import java.awt.event.HierarchyListener;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
 import java.awt.image.BufferedImage;
-import java.time.ZoneId;
-import java.time.format.DateTimeFormatter;
+import java.util.Collections;
 import java.util.List;
-import java.util.function.Consumer;
+import java.util.Locale;
 import javax.swing.BorderFactory;
-import javax.swing.DefaultListCellRenderer;
 import javax.swing.DefaultListModel;
 import javax.swing.JButton;
-import javax.swing.JCheckBox;
 import javax.swing.JLabel;
 import javax.swing.JList;
+import javax.swing.JMenu;
+import javax.swing.JMenuItem;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
+import javax.swing.JPopupMenu;
 import javax.swing.JScrollBar;
 import javax.swing.JScrollPane;
-import javax.swing.JTextArea;
+import javax.swing.ListCellRenderer;
 import javax.swing.ListSelectionModel;
 import javax.swing.SwingUtilities;
-import javax.swing.text.DefaultCaret;
 import net.runelite.client.ui.ColorScheme;
+import net.runelite.client.ui.FontManager;
 import net.runelite.client.ui.PluginPanel;
+import net.runelite.client.util.Filepath;
 
 public class EnhancedMessagingPanel extends PluginPanel
 {
-	private static final DateTimeFormatter TIME_FORMAT = DateTimeFormatter.ofPattern("HH:mm:ss")
-		.withZone(ZoneId.systemDefault());
-
 	private final ConversationService conversationService;
+	private final AvatarService avatars;
 	private final DefaultListModel<Conversation> conversationModel = new DefaultListModel<>();
 	private final JList<Conversation> conversationList = new JList<>(conversationModel);
 	private final JLabel conversationTitle = new JLabel("No conversation selected");
-	private final JTextArea transcript = new JTextArea();
+	private final MessageTranscript transcript = new MessageTranscript();
 	private final JScrollPane transcriptScroll = new JScrollPane(transcript);
-	private final JCheckBox retainHistory = new JCheckBox("Retain message history");
 	private final JButton deleteHistory = new JButton("Delete saved history");
 	private final JLabel storageStatus = new JLabel("Session history only.");
+	private final HierarchyListener visibilityListener = event ->
+	{
+		if ((event.getChangeFlags() & HierarchyEvent.SHOWING_CHANGED) != 0)
+		{
+			setViewing(isShowing());
+		}
+	};
 	private boolean refreshing;
+	private boolean viewing;
+	private boolean closed;
+	private long transcriptRevision;
 
-	public EnhancedMessagingPanel(ConversationService conversationService, Consumer<Boolean> retentionChanged,
-		Runnable deleteSavedHistory)
+	public EnhancedMessagingPanel(ConversationService conversationService, AvatarService avatars, Runnable deleteSavedHistory)
 	{
 		super(false);
 		this.conversationService = conversationService;
-		setLayout(new BorderLayout(0, 10));
+		this.avatars = avatars;
+		setLayout(new BorderLayout(0, 8));
 		setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
 		setBackground(ColorScheme.DARK_GRAY_COLOR);
 
 		JPanel top = new JPanel(new BorderLayout(0, 8));
 		top.setOpaque(false);
-		top.add(new JLabel("Private Messages"), BorderLayout.NORTH);
+		JLabel title = new JLabel("Enhanced Messaging");
+		title.setFont(FontManager.getRunescapeFont());
+		title.setForeground(Color.YELLOW);
+		top.add(title, BorderLayout.NORTH);
 		conversationList.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
 		conversationList.setBackground(ColorScheme.DARKER_GRAY_COLOR);
-		conversationList.setFixedCellHeight(30);
-		conversationList.setCellRenderer(new DefaultListCellRenderer()
-		{
-			@Override
-			public Component getListCellRendererComponent(JList<?> list, Object value, int index,
-				boolean selected, boolean focused)
-			{
-				JLabel label = (JLabel) super.getListCellRendererComponent(list, value, index, selected, focused);
-				label.putClientProperty("html.disable", true);
-				Conversation conversation = (Conversation) value;
-				label.setText(conversation.getPlayerName() + " (" + conversation.getMessageCount() + ")");
-				return label;
-			}
-		});
+		conversationList.setFixedCellHeight(36);
+		conversationList.setCellRenderer(new PlayerRenderer());
 		conversationList.addListSelectionListener(event ->
 		{
-			if (!event.getValueIsAdjusting() && !refreshing)
+			if (!event.getValueIsAdjusting() && !refreshing && !closed)
 			{
 				showConversation(true);
 			}
 		});
+		conversationList.addMouseListener(new MouseAdapter()
+		{
+			@Override
+			public void mousePressed(MouseEvent event)
+			{
+				popup(event);
+			}
+
+			@Override
+			public void mouseReleased(MouseEvent event)
+			{
+				popup(event);
+			}
+
+			private void popup(MouseEvent event)
+			{
+				int index = conversationList.locationToIndex(event.getPoint());
+				if (event.isPopupTrigger() && index >= 0 && conversationList.getCellBounds(index, index).contains(event.getPoint()))
+				{
+					showAvatarMenu(conversationModel.get(index).getPlayerName(), conversationList, event);
+				}
+			}
+		});
 		JScrollPane conversationsScroll = new JScrollPane(conversationList);
-		conversationsScroll.setPreferredSize(new Dimension(0, 150));
+		conversationsScroll.setPreferredSize(new Dimension(0, 112));
+		conversationsScroll.setMinimumSize(new Dimension(0, 0));
+		conversationsScroll.setBorder(null);
 		top.add(conversationsScroll, BorderLayout.CENTER);
 		add(top, BorderLayout.NORTH);
 
 		JPanel conversation = new JPanel(new BorderLayout(0, 8));
 		conversation.setOpaque(false);
 		conversationTitle.putClientProperty("html.disable", true);
+		conversationTitle.setFont(FontManager.getRunescapeFont());
+		conversationTitle.setForeground(Color.YELLOW);
+		conversationTitle.setIconTextGap(8);
+		conversationTitle.setMinimumSize(new Dimension(0, 26));
+		conversationTitle.setPreferredSize(new Dimension(0, 26));
+		conversationTitle.setToolTipText("Right-click to change this player's avatar locally.");
+		conversationTitle.addMouseListener(new MouseAdapter()
+		{
+			@Override
+			public void mousePressed(MouseEvent event)
+			{
+				popup(event);
+			}
+
+			@Override
+			public void mouseReleased(MouseEvent event)
+			{
+				popup(event);
+			}
+
+			private void popup(MouseEvent event)
+			{
+				Conversation selected = conversationList.getSelectedValue();
+				if (event.isPopupTrigger() && selected != null)
+				{
+					showAvatarMenu(selected.getPlayerName(), conversationTitle, event);
+				}
+			}
+		});
 		conversation.add(conversationTitle, BorderLayout.NORTH);
-		transcript.setEditable(false);
-		transcript.setLineWrap(true);
-		transcript.setWrapStyleWord(true);
-		transcript.setBackground(ColorScheme.DARKER_GRAY_COLOR);
-		transcript.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
-		transcript.setMargin(new java.awt.Insets(8, 8, 8, 8));
-		((DefaultCaret) transcript.getCaret()).setUpdatePolicy(DefaultCaret.NEVER_UPDATE);
-		// Let the sidebar's available height determine the viewport, regardless of message count.
 		transcriptScroll.setMinimumSize(new Dimension(0, 0));
 		transcriptScroll.setPreferredSize(new Dimension(0, 0));
+		transcriptScroll.setBorder(null);
+		transcriptScroll.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
 		conversation.add(transcriptScroll, BorderLayout.CENTER);
 		add(conversation, BorderLayout.CENTER);
 
-		// A wrapped text area's initial minimum height can force RuneLite to enlarge the window.
-		JPanel note = new JPanel(new GridLayout(0, 1, 0, 2));
-		note.setOpaque(false);
-		retainHistory.setOpaque(false);
-		retainHistory.setToolTipText("Save messages locally between sessions. Files are not encrypted.");
-		retainHistory.addActionListener(event ->
-		{
-			boolean enabled = retainHistory.isSelected();
-			if (enabled && JOptionPane.showConfirmDialog(this, EnhancedMessagingConfig.STORAGE_NOTICE,
-				"Retain message history", JOptionPane.YES_NO_OPTION, JOptionPane.INFORMATION_MESSAGE) != JOptionPane.YES_OPTION)
-			{
-				retainHistory.setSelected(false);
-				return;
-			}
-			retentionChanged.accept(enabled);
-		});
-		note.add(retainHistory);
+		JPanel footer = new JPanel(new GridLayout(0, 1, 0, 4));
+		footer.setOpaque(false);
+		storageStatus.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+		storageStatus.setFont(FontManager.getDefaultFont());
+		storageStatus.putClientProperty("html.disable", true);
+		footer.add(storageStatus);
 		deleteHistory.setEnabled(false);
 		deleteHistory.addActionListener(event ->
 		{
@@ -136,31 +175,54 @@ public class EnhancedMessagingPanel extends PluginPanel
 				deleteSavedHistory.run();
 			}
 		});
-		note.add(deleteHistory);
-		storageStatus.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
-		storageStatus.putClientProperty("html.disable", true);
-		note.add(storageStatus);
-		for (String line : new String[]{"Latest " + Conversation.MAX_MESSAGES + " messages/player.",
-			"Up to " + ConversationService.MAX_CONVERSATIONS + " players."})
-		{
-			JLabel label = new JLabel(line);
-			label.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
-			note.add(label);
-		}
-		add(note, BorderLayout.SOUTH);
+		footer.add(deleteHistory);
+		add(footer, BorderLayout.SOUTH);
+		addHierarchyListener(visibilityListener);
 		refresh();
 	}
 
-	public void setStorageState(boolean enabled, boolean canDelete, String status)
+	public void setStorageState(boolean canDelete, String status)
 	{
-		retainHistory.setSelected(enabled);
 		deleteHistory.setEnabled(canDelete);
 		storageStatus.setText(status);
 		storageStatus.setToolTipText(status);
 	}
 
+	@Override
+	public void onActivate()
+	{
+		setViewing(true);
+	}
+
+	@Override
+	public void onDeactivate()
+	{
+		setViewing(false);
+	}
+
+	private void setViewing(boolean visible)
+	{
+		if (!SwingUtilities.isEventDispatchThread())
+		{
+			SwingUtilities.invokeLater(() -> setViewing(visible));
+			return;
+		}
+		if (!closed)
+		{
+			viewing = visible;
+			if (visible)
+			{
+				showConversation(false);
+			}
+		}
+	}
+
 	public void refresh()
 	{
+		if (closed)
+		{
+			return;
+		}
 		Conversation previous = conversationList.getSelectedValue();
 		List<Conversation> conversations = conversationService.getConversations();
 		refreshing = true;
@@ -187,36 +249,133 @@ public class EnhancedMessagingPanel extends PluginPanel
 	{
 		Conversation conversation = conversationList.getSelectedValue();
 		conversationTitle.setText(conversation == null ? "No conversation selected" : conversation.getPlayerName());
-		StringBuilder content = new StringBuilder();
-		if (conversation == null)
+		if (viewing && conversation != null)
 		{
-			content.append("Send or receive a private message in-game to start a conversation.");
+			conversation.markRead();
+			conversationList.repaint();
 		}
-		else
-		{
-			for (PrivateMessage message : conversation.getMessages())
-			{
-				content.append('[').append(TIME_FORMAT.format(message.getTimestamp())).append("] ")
-					.append(message.isOutgoing() ? "You" : message.getPlayerName()).append(":\n")
-					.append(message.getText()).append("\n\n");
-			}
-		}
-		String text = content.toString();
-		if (text.equals(transcript.getText()))
-		{
-			return;
-		}
+		refreshAvatars();
 		JScrollBar scrollBar = transcriptScroll.getVerticalScrollBar();
 		boolean atBottom = scrollBar.getValue() + scrollBar.getVisibleAmount() >= scrollBar.getMaximum() - 8;
 		int previousScroll = scrollBar.getValue();
-		transcript.setText(text);
+		if (!transcript.setMessages(conversation == null ? Collections.emptyList() : conversation.getMessages()))
+		{
+			return;
+		}
+		long revision = ++transcriptRevision;
 		SwingUtilities.invokeLater(() ->
 		{
-			if (text.equals(transcript.getText()))
+			if (!closed && revision == transcriptRevision)
 			{
 				scrollBar.setValue(selectionChanged || atBottom ? scrollBar.getMaximum() : previousScroll);
 			}
 		});
+	}
+
+	public void refreshAvatars()
+	{
+		if (!closed)
+		{
+			Conversation selected = conversationList.getSelectedValue();
+			conversationTitle.setIcon(selected == null ? null : iconFor(selected.getPlayerName(), false));
+			conversationList.repaint();
+		}
+	}
+
+	private AvatarIcon iconFor(String player, boolean unread)
+	{
+		return new AvatarIcon(avatars == null ? null : avatars.imageFor(player), unread);
+	}
+
+	private void showAvatarMenu(String player, Component target, MouseEvent event)
+	{
+		if (closed || avatars == null || !avatars.canChange())
+		{
+			return;
+		}
+		long token = avatars.contextToken();
+		JPopupMenu menu = new JPopupMenu();
+		JMenu stocks = new JMenu("Stock avatar");
+		avatars.getStock().forEach((id, image) ->
+		{
+			JMenuItem choice = new JMenuItem(id.substring(0, 1).toUpperCase(Locale.ROOT) + id.substring(1), new AvatarIcon(image, false));
+			choice.addActionListener(ignored ->
+			{
+				if (avatars.isCurrent(token))
+				{
+					avatars.selectStock(player, id);
+				}
+			});
+			stocks.add(choice);
+		});
+		menu.add(stocks);
+		JMenuItem importImage = new JMenuItem("Import avatar...");
+		importImage.setToolTipText("Local only. PNG/JPEG up to 2 MiB and 2048 × 2048 pixels; cropped to a square.");
+		importImage.addActionListener(ignored ->
+		{
+			if (avatars.isCurrent(token))
+			{
+				List<Filepath> files = new Filepath.Chooser().setIsOpen().setAcceptsFiles()
+					.setDialogTitle("Import local avatar (PNG/JPEG, up to 2 MiB)")
+					.addExtensionFilter("PNG or JPEG image", "png", "jpg", "jpeg").showDialog(this);
+				if (files != null && !files.isEmpty() && avatars.isCurrent(token))
+				{
+					avatars.importImage(player, files.get(0));
+				}
+			}
+		});
+		menu.add(importImage);
+		JMenuItem reset = new JMenuItem("Reset avatar");
+		reset.addActionListener(ignored ->
+		{
+			if (avatars.isCurrent(token))
+			{
+				avatars.reset(player);
+			}
+		});
+		menu.add(reset);
+		menu.show(target, event.getX(), event.getY());
+	}
+
+	public void close()
+	{
+		closed = true;
+		viewing = false;
+		removeHierarchyListener(visibilityListener);
+	}
+
+	private class PlayerRenderer extends JPanel implements ListCellRenderer<Conversation>
+	{
+		private final JLabel name = new JLabel();
+		private final JLabel count = new JLabel();
+
+		PlayerRenderer()
+		{
+			super(new BorderLayout(8, 0));
+			setBorder(BorderFactory.createEmptyBorder(4, 6, 4, 6));
+			name.putClientProperty("html.disable", true);
+			name.setFont(FontManager.getRunescapeFont());
+			name.setForeground(Color.YELLOW);
+			name.setIconTextGap(8);
+			count.setFont(FontManager.getDefaultFont().deriveFont(10f));
+			count.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+			add(name, BorderLayout.CENTER);
+			add(count, BorderLayout.EAST);
+		}
+
+		@Override
+		public Component getListCellRendererComponent(JList<? extends Conversation> list, Conversation value,
+			int index, boolean selected, boolean focused)
+		{
+			setBackground(selected ? ColorScheme.MEDIUM_GRAY_COLOR : ColorScheme.DARKER_GRAY_COLOR);
+			name.setText(value.getPlayerName());
+			name.setIcon(iconFor(value.getPlayerName(), value.isUnread()));
+			count.setText(String.valueOf(value.getMessageCount()));
+			setToolTipText(value.isUnread() ? "New messages. Open this conversation to mark it read." : "Right-click to change avatar.");
+			getAccessibleContext().setAccessibleName(value.getPlayerName() + ", " + value.getMessageCount()
+				+ " messages" + (value.isUnread() ? ", unread" : ""));
+			return this;
+		}
 	}
 
 	public static BufferedImage createIcon()

@@ -20,6 +20,11 @@ public class ConversationService
 
 	public void record(PrivateMessage message)
 	{
+		record(message, true);
+	}
+
+	private void record(PrivateMessage message, boolean live)
+	{
 		String key = message.getPlayerName().toLowerCase(Locale.ROOT);
 		Conversation conversation = conversations.remove(key);
 		if (conversation == null)
@@ -27,6 +32,10 @@ public class ConversationService
 			conversation = new Conversation(message.getPlayerName());
 		}
 		conversation.add(message);
+		if (live && !message.isOutgoing())
+		{
+			conversation.markUnread();
+		}
 		conversations.put(key, conversation);
 		if (conversations.size() > MAX_CONVERSATIONS)
 		{
@@ -64,21 +73,37 @@ public class ConversationService
 	public void mergeSavedHistory(List<PrivateMessage> saved)
 	{
 		List<PrivateMessage> current = snapshot();
+		Set<String> unread = new HashSet<>();
+		conversations.forEach((key, conversation) ->
+		{
+			if (conversation.isUnread())
+			{
+				unread.add(key);
+			}
+		});
 		Set<String> seen = new HashSet<>();
 		clear();
 		for (PrivateMessage message : saved)
 		{
 			if (seen.add(message.getId()))
 			{
-				record(message);
+				record(message, false);
 			}
 		}
 		for (PrivateMessage message : current)
 		{
 			if (seen.add(message.getId()))
 			{
-				record(message);
+				record(message, false);
 			}
 		}
+		unread.forEach(key ->
+		{
+			Conversation conversation = conversations.get(key);
+			if (conversation != null)
+			{
+				conversation.markUnread();
+			}
+		});
 	}
 }

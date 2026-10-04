@@ -10,3 +10,4 @@ nbproject/
 *.class
 *.log
 *.log.gz
+/docs/

@@ -155,4 +155,25 @@ public class ConversationServiceTest
 	{
 		return new PrivateMessage(playerName, text, Instant.ofEpochSecond(100), false);
 	}
+
+	@Test
+	public void savedHistoryIsReadWhileLiveUnreadStateSurvivesMerging()
+	{
+		ConversationService service = new ConversationService();
+		service.record(message("Alice", "Live incoming"));
+		service.mergeSavedHistory(List.of(message("Alice", "Old Alice message"), message("Bob", "Old Bob message")));
+		assertTrue(service.getConversations().stream().filter(c -> c.getPlayerName().equals("Alice")).findFirst().get().isUnread());
+		assertFalse(service.getConversations().stream().filter(c -> c.getPlayerName().equals("Bob")).findFirst().get().isUnread());
+		service.getConversations().forEach(Conversation::markRead);
+		service.mergeSavedHistory(service.snapshot());
+		assertFalse(service.getConversations().stream().anyMatch(Conversation::isUnread));
+	}
+
+	@Test
+	public void outgoingMessagesDoNotMarkTheConversationUnread()
+	{
+		ConversationService service = new ConversationService();
+		service.record(new PrivateMessage("Alice", "My message", Instant.now(), true));
+		assertFalse(service.getConversations().get(0).isUnread());
+	}
 }

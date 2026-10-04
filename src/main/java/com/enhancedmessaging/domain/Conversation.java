@@ -14,6 +14,8 @@ public class Conversation
 	@Getter
 	private final String playerName;
 	private final Deque<PrivateMessage> messages = new ArrayDeque<>();
+	@Getter
+	private boolean unread;
 
 	public Conversation(String playerName)
 	{
@@ -37,5 +39,15 @@ public class Conversation
 	public int getMessageCount()
 	{
 		return messages.size();
+	}
+
+	public void markUnread()
+	{
+		unread = true;
+	}
+
+	public void markRead()
+	{
+		unread = false;
 	}
 }
