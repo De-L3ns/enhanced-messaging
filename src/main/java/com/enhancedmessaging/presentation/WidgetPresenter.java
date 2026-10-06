@@ -1,21 +1,24 @@
-package com.enhancedmessaging.application;
+package com.enhancedmessaging.presentation;
 
+import com.enhancedmessaging.application.AvatarService;
+import com.enhancedmessaging.application.FriendStatusService;
 import com.enhancedmessaging.domain.Conversation;
+import com.enhancedmessaging.domain.ConversationHistory;
 import com.enhancedmessaging.domain.FriendStatus;
 import com.enhancedmessaging.domain.PrivateMessage;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 
-public class WidgetService
+public class WidgetPresenter
 {
-	private final ConversationService conversations;
+	private final ConversationHistory conversations;
 	private final AvatarService avatars;
 	private final FriendStatusService friends;
 	private String account;
 	private long generation;
 
-	public WidgetService(ConversationService conversations, AvatarService avatars, FriendStatusService friends)
+	public WidgetPresenter(ConversationHistory conversations, AvatarService avatars, FriendStatusService friends)
 	{
 		this.conversations = conversations;
 		this.avatars = avatars;

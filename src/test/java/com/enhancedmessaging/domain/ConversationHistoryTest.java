@@ -1,43 +1,19 @@
-package com.enhancedmessaging.application;
+package com.enhancedmessaging.domain;
 
-import com.enhancedmessaging.domain.Conversation;
-import com.enhancedmessaging.domain.PrivateMessage;
-import com.enhancedmessaging.infrastructure.PrivateMessageMapper;
 import java.time.Instant;
 import java.util.List;
-import net.runelite.api.ChatMessageType;
-import net.runelite.api.events.ChatMessage;
 import org.junit.Test;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
-public class ConversationServiceTest
+public class ConversationHistoryTest
 {
-	@Test
-	public void groupsIncomingAndOutgoingMessagesDespiteNameFormatting()
-	{
-		ConversationService service = new ConversationService();
-		service.record(PrivateMessageMapper.fromEvent(new ChatMessage(null, ChatMessageType.PRIVATECHAT,
-			"<img=2>Alice\u00a0Smith", "Hello", "", 100)));
-		service.record(PrivateMessageMapper.fromEvent(new ChatMessage(null, ChatMessageType.PRIVATECHATOUT,
-			"alice_smith", "Hi back", "", 101)));
-
-		assertEquals(1, service.getConversations().size());
-		Conversation conversation = service.getConversations().get(0);
-		assertEquals("Alice Smith", conversation.getPlayerName());
-		assertEquals(2, conversation.getMessageCount());
-		assertEquals("Hello", conversation.getMessages().get(0).getText());
-		assertFalse(conversation.getMessages().get(0).isOutgoing());
-		assertEquals("Hi back", conversation.getMessages().get(1).getText());
-		assertTrue(conversation.getMessages().get(1).isOutgoing());
-	}
-
 	@Test
 	public void keepsPlayersSeparateAndOrdersByRecentActivity()
 	{
-		ConversationService service = new ConversationService();
+		ConversationHistory service = new ConversationHistory();
 		service.record(message("Alice", "First"));
 		service.record(message("Bob", "Second"));
 		service.record(message("Alice", "Third"));
@@ -51,7 +27,7 @@ public class ConversationServiceTest
 	@Test
 	public void keepsRepeatedIdenticalMessages()
 	{
-		ConversationService service = new ConversationService();
+		ConversationHistory service = new ConversationHistory();
 		service.record(message("Alice", "Hello"));
 		service.record(message("Alice", "Hello"));
 
@@ -61,7 +37,7 @@ public class ConversationServiceTest
 	@Test
 	public void retainsOnlyTheLatestMessagesInChronologicalOrder()
 	{
-		ConversationService service = new ConversationService();
+		ConversationHistory service = new ConversationHistory();
 		for (int i = 0; i < Conversation.MAX_MESSAGES + 2; i++)
 		{
 			service.record(message("Alice", "Message " + i));
@@ -76,15 +52,15 @@ public class ConversationServiceTest
 	@Test
 	public void evictsTheLeastRecentlyActivePlayerAtTheConversationLimit()
 	{
-		ConversationService service = new ConversationService();
-		for (int i = 0; i < ConversationService.MAX_CONVERSATIONS; i++)
+		ConversationHistory service = new ConversationHistory();
+		for (int i = 0; i < ConversationHistory.MAX_CONVERSATIONS; i++)
 		{
 			service.record(message("Player " + i, "Hello"));
 		}
 		service.record(message("Player 0", "Still active"));
 		service.record(message("New player", "Hello"));
 
-		assertEquals(ConversationService.MAX_CONVERSATIONS, service.getConversations().size());
+		assertEquals(ConversationHistory.MAX_CONVERSATIONS, service.getConversations().size());
 		assertFalse(service.getConversations().stream().anyMatch(c -> c.getPlayerName().equals("Player 1")));
 		assertTrue(service.getConversations().stream().anyMatch(c -> c.getPlayerName().equals("Player 0")));
 		assertEquals("New player", service.getConversations().get(0).getPlayerName());
@@ -93,7 +69,7 @@ public class ConversationServiceTest
 	@Test
 	public void clearStartsAnEmptySession()
 	{
-		ConversationService service = new ConversationService();
+		ConversationHistory service = new ConversationHistory();
 		service.record(message("Alice", "Old session"));
 		service.clear();
 
@@ -106,7 +82,7 @@ public class ConversationServiceTest
 	@Test
 	public void mergingKeepsGenuineRepeatedMessagesWhileDeduplicatingPreviouslyLoadedIds()
 	{
-		ConversationService service = new ConversationService();
+		ConversationHistory service = new ConversationHistory();
 		PrivateMessage saved = message("Alice", "Hello");
 		PrivateMessage fresh = message("Alice", "Hello");
 		service.record(saved);
@@ -119,12 +95,12 @@ public class ConversationServiceTest
 	@Test
 	public void mergingSavedHistoryStillEnforcesTheMessageLimit()
 	{
-		ConversationService saved = new ConversationService();
+		ConversationHistory saved = new ConversationHistory();
 		for (int i = 0; i < Conversation.MAX_MESSAGES; i++)
 		{
 			saved.record(message("Alice", "Saved " + i));
 		}
-		ConversationService current = new ConversationService();
+		ConversationHistory current = new ConversationHistory();
 		PrivateMessage fresh = message("Alice", "Fresh message");
 		current.record(fresh);
 		current.mergeSavedHistory(saved.snapshot());
@@ -137,16 +113,16 @@ public class ConversationServiceTest
 	@Test
 	public void mergingSavedHistoryStillEnforcesTheConversationLimit()
 	{
-		ConversationService saved = new ConversationService();
-		for (int i = 0; i < ConversationService.MAX_CONVERSATIONS; i++)
+		ConversationHistory saved = new ConversationHistory();
+		for (int i = 0; i < ConversationHistory.MAX_CONVERSATIONS; i++)
 		{
 			saved.record(message("Player " + i, "Saved"));
 		}
-		ConversationService current = new ConversationService();
+		ConversationHistory current = new ConversationHistory();
 		current.record(message("New player", "Fresh"));
 		current.mergeSavedHistory(saved.snapshot());
 
-		assertEquals(ConversationService.MAX_CONVERSATIONS, current.getConversations().size());
+		assertEquals(ConversationHistory.MAX_CONVERSATIONS, current.getConversations().size());
 		assertEquals("New player", current.getConversations().get(0).getPlayerName());
 		assertFalse(current.getConversations().stream().anyMatch(c -> c.getPlayerName().equals("Player 0")));
 	}
@@ -159,7 +135,7 @@ public class ConversationServiceTest
 	@Test
 	public void savedHistoryIsReadWhileLiveUnreadStateSurvivesMerging()
 	{
-		ConversationService service = new ConversationService();
+		ConversationHistory service = new ConversationHistory();
 		service.record(message("Alice", "Live incoming"));
 		service.mergeSavedHistory(List.of(message("Alice", "Old Alice message"), message("Bob", "Old Bob message")));
 		assertTrue(service.getConversations().stream().filter(c -> c.getPlayerName().equals("Alice")).findFirst().get().isUnread());
@@ -172,7 +148,7 @@ public class ConversationServiceTest
 	@Test
 	public void resolvedCommandsReplaceTextWithoutReorderingOrChangingUnreadState()
 	{
-		ConversationService service = new ConversationService();
+		ConversationHistory service = new ConversationHistory();
 		PrivateMessage command = message("Alice", "!kc zulrah");
 		PrivateMessage newest = message("Bob", "Newest incoming");
 		service.record(command);
@@ -200,7 +176,7 @@ public class ConversationServiceTest
 	@Test
 	public void aSavedRawCommandCannotOverwriteTheResolvedLiveTextDuringAMerge()
 	{
-		ConversationService service = new ConversationService();
+		ConversationHistory service = new ConversationHistory();
 		PrivateMessage command = message("Alice", "!kc zulrah");
 		service.record(command);
 		service.updateMessage(new PrivateMessage(command.getId(), "Alice", "Zulrah: 42 killed", command.getTimestamp(), false));
@@ -215,7 +191,7 @@ public class ConversationServiceTest
 	@Test
 	public void outgoingMessagesDoNotMarkTheConversationUnread()
 	{
-		ConversationService service = new ConversationService();
+		ConversationHistory service = new ConversationHistory();
 		service.record(new PrivateMessage("Alice", "My message", Instant.now(), true));
 		assertFalse(service.getConversations().get(0).isUnread());
 	}

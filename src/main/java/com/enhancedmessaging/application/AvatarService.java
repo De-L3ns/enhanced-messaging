@@ -1,5 +1,6 @@
 package com.enhancedmessaging.application;
 
+import com.enhancedmessaging.domain.ConversationHistory;
 import java.awt.image.BufferedImage;
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -148,7 +149,7 @@ public class AvatarService
 						+ "Imports must be PNG/JPEG, up to 2 MiB and 2048 × 2048 pixels. Check that RuneLite can write its plugin data folder.");
 				}
 			}
-			while (images.size() > ConversationService.MAX_CONVERSATIONS)
+			while (images.size() > ConversationHistory.MAX_CONVERSATIONS)
 			{
 				images.remove(images.keySet().iterator().next());
 			}

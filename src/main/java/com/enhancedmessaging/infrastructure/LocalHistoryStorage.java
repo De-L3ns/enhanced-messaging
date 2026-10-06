@@ -1,7 +1,7 @@
 package com.enhancedmessaging.infrastructure;
 
-import com.enhancedmessaging.application.ConversationService;
-import com.enhancedmessaging.application.HistoryRepository;
+import com.enhancedmessaging.domain.ConversationHistory;
+import com.enhancedmessaging.application.HistoryStorage;
 import com.enhancedmessaging.domain.Conversation;
 import com.enhancedmessaging.domain.PrivateMessage;
 import com.google.gson.Gson;
@@ -24,26 +24,93 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
+import java.util.concurrent.Executor;
 import java.util.zip.GZIPInputStream;
 import java.util.zip.GZIPOutputStream;
 import net.runelite.client.util.Filepath;
 
-public class JsonHistoryRepository implements HistoryRepository
+public class LocalHistoryStorage implements HistoryStorage
 {
 	private static final int FORMAT_VERSION = 1;
-	private static final int MAX_RECORDS = Conversation.MAX_MESSAGES * ConversationService.MAX_CONVERSATIONS;
+	private static final int MAX_RECORDS = Conversation.MAX_MESSAGES * ConversationHistory.MAX_CONVERSATIONS;
 	private static final int MAX_BYTES = 32 * 1024 * 1024;
 	private final RootDirectory rootDirectory;
 	private final Gson gson;
+	private final Executor executor;
+	private CompletableFuture<?> tail = CompletableFuture.completedFuture(null);
 
-	public JsonHistoryRepository(RootDirectory rootDirectory, Gson gson)
+	public LocalHistoryStorage(RootDirectory rootDirectory, Gson gson, Executor executor)
 	{
 		this.rootDirectory = rootDirectory;
 		this.gson = gson;
+		this.executor = executor;
 	}
 
 	@Override
-	public List<PrivateMessage> load(String accountKey) throws IOException
+	public CompletableFuture<List<PrivateMessage>> load(String accountKey)
+	{
+		return submit(() -> read(accountKey));
+	}
+
+	@Override
+	public CompletableFuture<Void> save(String accountKey, List<PrivateMessage> messages, boolean mergeExisting)
+	{
+		return submit(() ->
+		{
+			List<PrivateMessage> snapshot = messages;
+			if (mergeExisting)
+			{
+				ConversationHistory merged = new ConversationHistory();
+				messages.forEach(merged::record);
+				merged.mergeSavedHistory(read(accountKey));
+				snapshot = merged.snapshot();
+			}
+			write(accountKey, snapshot);
+			return null;
+		});
+	}
+
+	@Override
+	public CompletableFuture<Void> delete(String accountKey)
+	{
+		return submit(() ->
+		{
+			historyFile(accountKey).deleteIfExists();
+			return null;
+		});
+	}
+
+	public synchronized CompletableFuture<Void> drain()
+	{
+		return tail.thenApply(ignored -> null);
+	}
+
+	private synchronized <T> CompletableFuture<T> submit(IoOperation<T> operation)
+	{
+		CompletableFuture<T> result = tail.handle((ignored, error) -> null).thenApplyAsync(ignored ->
+		{
+			try
+			{
+				return operation.run();
+			}
+			catch (IOException ex)
+			{
+				throw new CompletionException(ex);
+			}
+		}, executor);
+		tail = result;
+		return result;
+	}
+
+	@FunctionalInterface
+	private interface IoOperation<T>
+	{
+		T run() throws IOException;
+	}
+
+	private List<PrivateMessage> read(String accountKey) throws IOException
 	{
 		Filepath file = historyFile(accountKey);
 		if (!file.exists())
@@ -99,8 +166,7 @@ public class JsonHistoryRepository implements HistoryRepository
 		}
 	}
 
-	@Override
-	public void save(String accountKey, List<PrivateMessage> messages) throws IOException
+	private void write(String accountKey, List<PrivateMessage> messages) throws IOException
 	{
 		Filepath file = historyFile(accountKey);
 		file.getParent().createDirectories();
@@ -139,12 +205,6 @@ public class JsonHistoryRepository implements HistoryRepository
 		{
 			temporary.deleteIfExists();
 		}
-	}
-
-	@Override
-	public void delete(String accountKey) throws IOException
-	{
-		historyFile(accountKey).deleteIfExists();
 	}
 
 	private PrivateMessage readMessage(JsonReader reader) throws IOException

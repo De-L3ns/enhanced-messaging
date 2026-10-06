@@ -1,6 +1,6 @@
 package com.enhancedmessaging.infrastructure;
 
-import com.enhancedmessaging.application.BossIconSource;
+import com.enhancedmessaging.application.BossIconService.Source;
 import java.awt.image.BufferedImage;
 import java.util.HashMap;
 import java.util.Locale;
@@ -10,7 +10,7 @@ import net.runelite.client.game.SpriteManager;
 import net.runelite.client.hiscore.HiscoreSkill;
 import net.runelite.client.hiscore.HiscoreSkillType;
 
-public class RuneLiteBossIcons implements BossIconSource
+public class RuneLiteBossIcons implements Source
 {
 	private static final Map<String, HiscoreSkill> BOSSES = new HashMap<>();
 	static

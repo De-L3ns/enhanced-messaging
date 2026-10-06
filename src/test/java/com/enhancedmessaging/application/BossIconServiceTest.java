@@ -14,7 +14,7 @@ public class BossIconServiceTest
 	private final CompletableFuture<BufferedImage> response = new CompletableFuture<>();
 	private final AtomicInteger loads = new AtomicInteger();
 	private final AtomicInteger changes = new AtomicInteger();
-	private final BossIconSource source = new BossIconSource()
+	private final BossIconService.Source source = new BossIconService.Source()
 	{
 		public String canonicalName(String name) { return name.equalsIgnoreCase("Vardorvis") ? "Vardorvis" : null; }
 		public CompletableFuture<BufferedImage> load(String name) { loads.incrementAndGet(); return response; }

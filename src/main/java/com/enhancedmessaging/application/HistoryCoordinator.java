@@ -1,5 +1,6 @@
 package com.enhancedmessaging.application;
 
+import com.enhancedmessaging.domain.ConversationHistory;
 import com.enhancedmessaging.domain.PrivateMessage;
 import java.util.Objects;
 import java.util.concurrent.Executor;
@@ -13,7 +14,7 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 public class HistoryCoordinator
 {
-	private final ConversationService conversations;
+	private final ConversationHistory conversations;
 	private final HistoryStorage storage;
 	private final ScheduledExecutorService scheduler;
 	private final Executor uiExecutor;
@@ -32,7 +33,7 @@ public class HistoryCoordinator
 	private long generation;
 	private ScheduledFuture<?> pendingSave;
 
-	public HistoryCoordinator(ConversationService conversations, HistoryStorage storage,
+	public HistoryCoordinator(ConversationHistory conversations, HistoryStorage storage,
 		ScheduledExecutorService scheduler, Executor uiExecutor, Runnable storageChanged, Runnable conversationsChanged)
 	{
 		this.conversations = conversations;

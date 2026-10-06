@@ -1,10 +1,7 @@
 package com.enhancedmessaging.presentation;
 
-import com.enhancedmessaging.application.WidgetView;
-import com.enhancedmessaging.application.WidgetOptions;
 import com.enhancedmessaging.domain.FriendStatus;
 import com.enhancedmessaging.domain.PrivateMessage;
-import com.enhancedmessaging.domain.WidgetUnreadStyle;
 import java.awt.Color;
 import java.awt.Dimension;
 import java.awt.Font;

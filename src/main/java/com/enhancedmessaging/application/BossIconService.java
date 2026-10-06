@@ -11,14 +11,14 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 public class BossIconService
 {
-	private final BossIconSource source;
+	private final Source source;
 	private final Executor uiExecutor;
 	private final Runnable changed;
 	private final Map<String, BufferedImage> images = new HashMap<>();
 	private final Map<String, CompletableFuture<BufferedImage>> pending = new HashMap<>();
 	private boolean closed;
 
-	public BossIconService(BossIconSource source, Executor uiExecutor, Runnable changed)
+	public BossIconService(Source source, Executor uiExecutor, Runnable changed)
 	{
 		this.source = source;
 		this.uiExecutor = uiExecutor;
@@ -53,5 +53,12 @@ public class BossIconService
 		pending.values().forEach(future -> future.cancel(false));
 		pending.clear();
 		images.clear();
+	}
+
+	public interface Source
+	{
+		// Null means this boss has no native icon in the current client.
+		String canonicalName(String boss);
+		CompletableFuture<BufferedImage> load(String boss);
 	}
 }

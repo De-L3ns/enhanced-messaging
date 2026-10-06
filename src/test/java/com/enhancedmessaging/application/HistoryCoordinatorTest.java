@@ -1,5 +1,6 @@
 package com.enhancedmessaging.application;
 
+import com.enhancedmessaging.domain.ConversationHistory;
 import com.enhancedmessaging.domain.PrivateMessage;
 import java.io.IOException;
 import java.time.Instant;
@@ -21,7 +22,7 @@ import static org.junit.Assert.assertTrue;
 
 public class HistoryCoordinatorTest
 {
-	private final ConversationService conversations = new ConversationService();
+	private final ConversationHistory conversations = new ConversationHistory();
 	private final FakeStorage storage = new FakeStorage();
 	private final ManualScheduler scheduler = new ManualScheduler();
 	private final HistoryCoordinator coordinator = new HistoryCoordinator(conversations, storage,

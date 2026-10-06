@@ -2,17 +2,16 @@ package com.enhancedmessaging;
 
 import com.enhancedmessaging.application.AvatarService;
 import com.enhancedmessaging.application.BossIconService;
-import com.enhancedmessaging.application.ConversationService;
+import com.enhancedmessaging.domain.ConversationHistory;
 import com.enhancedmessaging.application.FriendStatusService;
 import com.enhancedmessaging.application.HistoryCoordinator;
-import com.enhancedmessaging.application.WidgetOptions;
-import com.enhancedmessaging.application.WidgetService;
+import com.enhancedmessaging.presentation.WidgetOptions;
+import com.enhancedmessaging.presentation.WidgetPresenter;
 import com.enhancedmessaging.domain.PrivateMessage;
 import com.enhancedmessaging.domain.FriendStatus;
-import com.enhancedmessaging.infrastructure.AsyncHistoryStorage;
+import com.enhancedmessaging.infrastructure.LocalHistoryStorage;
 import com.enhancedmessaging.infrastructure.ChatCommandMessages;
 import com.enhancedmessaging.infrastructure.FriendStatusReader;
-import com.enhancedmessaging.infrastructure.JsonHistoryRepository;
 import com.enhancedmessaging.infrastructure.LocalAvatarStorage;
 import com.enhancedmessaging.infrastructure.PrivateMessageMapper;
 import com.enhancedmessaging.infrastructure.RuneLiteBossIcons;
@@ -96,7 +95,7 @@ public class EnhancedMessagingPlugin extends Plugin
 	@Inject
 	private SpriteManager spriteManager;
 
-	private AsyncHistoryStorage storage;
+	private LocalHistoryStorage storage;
 	private LocalAvatarStorage avatarStorage;
 	private volatile Session activeSession;
 
@@ -111,75 +110,74 @@ public class EnhancedMessagingPlugin extends Plugin
 	{
 		if (storage == null)
 		{
-			storage = new AsyncHistoryStorage(new JsonHistoryRepository(this::getPluginDirectory, gson),
+			storage = new LocalHistoryStorage(this::getPluginDirectory, gson,
 				httpClient.dispatcher().executorService());
 			avatarStorage = new LocalAvatarStorage(this::getPluginDirectory, httpClient.dispatcher().executorService());
 		}
 		Session session = new Session();
 		activeSession = session;
-		SwingUtilities.invokeLater(() ->
-		{
-			if (activeSession != session)
-			{
-				return;
-			}
-			session.widget = new MessageWidgetOverlay(this,
-				() -> activeSession == session && !session.closed && client.getGameState() == GameState.LOGGED_IN,
-				() -> !client.isMenuOpen() && !client.isWidgetSelected(), client::getCanvasHeight);
-			session.avatars = new AvatarService(avatarStorage, SwingUtilities::invokeLater, () ->
-			{
-				if (session.panel != null)
-				{
-					session.panel.refreshAvatars();
-					refreshWidget(session);
-				}
-			}, message ->
-			{
-				if (activeSession == session)
-				{
-					JOptionPane.showMessageDialog(session.panel, message, "Avatar", JOptionPane.ERROR_MESSAGE);
-				}
-			});
-			session.panel = new EnhancedMessagingPanel(session.conversations, session.avatars, session.friends,
-				() -> session.history.deleteHistory());
-			session.bossIcons = new BossIconService(new RuneLiteBossIcons(spriteManager), SwingUtilities::invokeLater, () ->
-			{
-				if (activeSession == session && !session.closed) { session.panel.refreshBossIcons(); }
-			});
-			session.panel.setBossIcons(session.bossIcons);
-			session.widgetService = new WidgetService(session.conversations, session.avatars, session.friends);
-			session.panel.setReadChanged(() -> refreshWidget(session));
-			session.history = new HistoryCoordinator(session.conversations, storage, scheduler,
-				SwingUtilities::invokeLater, () ->
-				{
-					session.panel.setStorageState(session.history.canDelete(),
-						session.history.getStatus());
-				}, () ->
-				{
-					refreshConversations(session);
-				});
-			session.history.setRetentionEnabled(config.retainHistory());
-			session.navigationButton = NavigationButton.builder()
-				.tooltip("Enhanced Messaging")
-				.icon(EnhancedMessagingPanel.createIcon())
-				.priority(7)
-				.panel(session.panel)
-				.build();
-			clientToolbar.addNavigation(session.navigationButton);
-			session.widgetMouse = new MessageWidgetMouseListener(session.widget, action ->
-				queue(session, current ->
-				{
-					if (current.widgetService.isCurrent(action.getContextToken()) && config.widgetClickToOpen() && config.widgetEnabled())
-					{
-						current.panel.selectConversation(action.getPlayer());
-						clientToolbar.openPanel(current.navigationButton);
-					}
-				}));
-			overlayManager.add(session.widget);
-			mouseManager.registerMouseListener(session.widgetMouse);
-			clientThread.invoke(() -> synchronizeAccount(session));
-		});
+		SwingUtilities.invokeLater(() -> openSession(session));
 		log.debug("Enhanced Messaging started!");
+	}
+
+	// Session construction and UI registration happen together on the Swing thread.
+	private void openSession(Session session)
+	{
+		if (activeSession != session)
+		{
+			return;
+		}
+		session.widget = new MessageWidgetOverlay(this,
+			() -> activeSession == session && !session.closed && client.getGameState() == GameState.LOGGED_IN,
+			() -> !client.isMenuOpen() && !client.isWidgetSelected(), client::getCanvasHeight);
+		session.avatars = new AvatarService(avatarStorage, SwingUtilities::invokeLater,
+			() -> refreshAppearance(session), message ->
+		{
+			if (activeSession == session)
+			{
+				JOptionPane.showMessageDialog(session.panel, message, "Avatar", JOptionPane.ERROR_MESSAGE);
+			}
+		});
+		session.panel = new EnhancedMessagingPanel(session.conversations, session.avatars, session.friends,
+			() -> session.history.deleteHistory());
+		session.bossIcons = new BossIconService(new RuneLiteBossIcons(spriteManager), SwingUtilities::invokeLater, () ->
+		{
+			if (activeSession == session && !session.closed) { session.panel.refreshBossIcons(); }
+		});
+		session.panel.setBossIcons(session.bossIcons);
+		session.widgetPresenter = new WidgetPresenter(session.conversations, session.avatars, session.friends);
+		session.panel.setReadChanged(() -> refreshWidget(session));
+		session.history = new HistoryCoordinator(session.conversations, storage, scheduler,
+			SwingUtilities::invokeLater, () ->
+			{
+				session.panel.setStorageState(session.history.canDelete(),
+					session.history.getStatus());
+			}, () -> refreshConversations(session));
+		session.history.setRetentionEnabled(config.retainHistory());
+		session.navigationButton = NavigationButton.builder()
+			.tooltip("Enhanced Messaging")
+			.icon(EnhancedMessagingPanel.createIcon())
+			.priority(7)
+			.panel(session.panel)
+			.build();
+		clientToolbar.addNavigation(session.navigationButton);
+		registerWidget(session);
+		clientThread.invoke(() -> synchronizeAccount(session));
+	}
+
+	private void registerWidget(Session session)
+	{
+		session.widgetMouse = new MessageWidgetMouseListener(session.widget, action ->
+			queue(session, current ->
+			{
+				if (current.widgetPresenter.isCurrent(action.getContextToken()) && config.widgetClickToOpen() && config.widgetEnabled())
+				{
+					current.panel.selectConversation(action.getPlayer());
+					clientToolbar.openPanel(current.navigationButton);
+				}
+			}));
+		overlayManager.add(session.widget);
+		mouseManager.registerMouseListener(session.widgetMouse);
 	}
 
 	@Override
@@ -243,8 +241,7 @@ public class EnhancedMessagingPlugin extends Plugin
 					{
 						switchAccount(current, null);
 						current.history.logout();
-						current.panel.refreshAvatars();
-						refreshWidget(current);
+						refreshAppearance(current);
 					});
 			}
 		}
@@ -265,8 +262,7 @@ public class EnhancedMessagingPlugin extends Plugin
 				{
 					if (current.friends.update(account, Collections.emptyMap()))
 					{
-						current.panel.refreshAvatars();
-						refreshWidget(current);
+						refreshAppearance(current);
 					}
 				});
 			}
@@ -381,8 +377,7 @@ public class EnhancedMessagingPlugin extends Plugin
 			{
 				if (current.friends.update(account, snapshot))
 				{
-					current.panel.refreshAvatars();
-					refreshWidget(current);
+					refreshAppearance(current);
 				}
 			});
 		}
@@ -400,11 +395,10 @@ public class EnhancedMessagingPlugin extends Plugin
 		session.avatars.switchAccount(account);
 		session.friends.switchAccount(account);
 		session.history.switchAccount(account);
-		session.widgetService.switchAccount(account);
+		session.widgetPresenter.switchAccount(account);
 		session.updatingAccount = false;
 		if (changed) { session.panel.refresh(); }
-		session.panel.refreshAvatars();
-		refreshWidget(session);
+		refreshAppearance(session);
 	}
 
 	private void refreshConversations(Session session)
@@ -416,9 +410,18 @@ public class EnhancedMessagingPlugin extends Plugin
 		}
 	}
 
+	private void refreshAppearance(Session session)
+	{
+		if (activeSession == session && !session.closed && session.panel != null && !session.updatingAccount)
+		{
+			session.panel.refreshAvatars();
+			refreshWidget(session);
+		}
+	}
+
 	private void refreshWidget(Session session)
 	{
-		if (activeSession != session || session.closed || session.widgetService == null || session.updatingAccount) { return; }
+		if (activeSession != session || session.closed || session.widgetPresenter == null || session.updatingAccount) { return; }
 		if (!config.widgetEnabled() || session.account == null)
 		{
 			session.widget.publish(null);
@@ -427,7 +430,7 @@ public class EnhancedMessagingPlugin extends Plugin
 		WidgetOptions options = new WidgetOptions(config.widgetEnabled(), config.widgetChatCount(), config.widgetPreviewCount(),
 			config.widgetLowFootprint(), config.widgetAvatars(), config.widgetStatus(), config.widgetUnread(), config.widgetUnreadStyle(),
 			config.widgetClickToOpen());
-		session.widget.publish(session.widgetService.snapshot(options));
+		session.widget.publish(session.widgetPresenter.snapshot(options));
 	}
 
 	private void closeSession(Session session)
@@ -461,13 +464,13 @@ public class EnhancedMessagingPlugin extends Plugin
 
 	private static class Session
 	{
-		private final ConversationService conversations = new ConversationService();
+		private final ConversationHistory conversations = new ConversationHistory();
 		private final ChatCommandMessages commandMessages = new ChatCommandMessages();
 		private final FriendStatusService friends = new FriendStatusService();
 		private String account;
 		private boolean updatingAccount;
 		private volatile boolean closed;
-		private WidgetService widgetService;
+		private WidgetPresenter widgetPresenter;
 		private volatile MessageWidgetOverlay widget;
 		private MessageWidgetMouseListener widgetMouse;
 		// Only the client thread reads and writes this snapshot.

@@ -1,7 +1,5 @@
-package com.enhancedmessaging.application;
+package com.enhancedmessaging.domain;
 
-import com.enhancedmessaging.domain.Conversation;
-import com.enhancedmessaging.domain.PrivateMessage;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
@@ -11,8 +9,8 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
-// The plugin and panel access session history only on the Swing event dispatch thread.
-public class ConversationService
+// Mutable conversation state; callers must confine each instance to one thread.
+public class ConversationHistory
 {
 	public static final int MAX_CONVERSATIONS = 100;
 

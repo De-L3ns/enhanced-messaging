@@ -1,6 +1,6 @@
 package com.enhancedmessaging.presentation;
 
-import com.enhancedmessaging.application.ConversationService;
+import com.enhancedmessaging.domain.ConversationHistory;
 import com.enhancedmessaging.application.FriendStatusService;
 import com.enhancedmessaging.domain.Conversation;
 import com.enhancedmessaging.domain.PrivateMessage;
@@ -31,7 +31,7 @@ public class EnhancedMessagingPanelTest
 	{
 		SwingUtilities.invokeAndWait(() ->
 		{
-			ConversationService conversations = new ConversationService();
+			ConversationHistory conversations = new ConversationHistory();
 			conversations.record(message("Alice", "Hello", false));
 			conversations.record(message("Bob", "Hi", false));
 			EnhancedMessagingPanel panel = createPanel(conversations);
@@ -57,7 +57,7 @@ public class EnhancedMessagingPanelTest
 	{
 		SwingUtilities.invokeAndWait(() ->
 		{
-			ConversationService conversations = new ConversationService();
+			ConversationHistory conversations = new ConversationHistory();
 			conversations.record(message("Alice", "Hello", false));
 			FriendStatusService friends = new FriendStatusService();
 			friends.switchAccount("account-a");
@@ -92,7 +92,7 @@ public class EnhancedMessagingPanelTest
 	{
 		SwingUtilities.invokeAndWait(() ->
 		{
-			EnhancedMessagingPanel panel = createPanel(new ConversationService());
+			EnhancedMessagingPanel panel = createPanel(new ConversationHistory());
 			assertTrue("Minimum panel size: " + panel.getMinimumSize(), panel.getMinimumSize().height <= 300);
 			assertTrue("Preferred panel size: " + panel.getPreferredSize(), panel.getPreferredSize().height <= 500);
 		});
@@ -103,7 +103,7 @@ public class EnhancedMessagingPanelTest
 	{
 		SwingUtilities.invokeAndWait(() ->
 		{
-			ConversationService service = new ConversationService();
+			ConversationHistory service = new ConversationHistory();
 			EnhancedMessagingPanel panel = createPanel(service);
 			int initialMinimumHeight = panel.getMinimumSize().height;
 			int initialPreferredHeight = panel.getPreferredSize().height;
@@ -126,7 +126,7 @@ public class EnhancedMessagingPanelTest
 	{
 		SwingUtilities.invokeAndWait(() ->
 		{
-			ConversationService service = new ConversationService();
+			ConversationHistory service = new ConversationHistory();
 			service.record(message("Alice", "Alice's message", false));
 			EnhancedMessagingPanel panel = createPanel(service);
 			JList<?> list = findConversationList(panel);
@@ -155,7 +155,7 @@ public class EnhancedMessagingPanelTest
 	@Test
 	public void receivedMessagesScrollToTheBottomEvenWhenReadingOlderMessages() throws Exception
 	{
-		ConversationService service = new ConversationService();
+		ConversationHistory service = new ConversationHistory();
 		EnhancedMessagingPanel[] panel = new EnhancedMessagingPanel[1];
 		JScrollBar[] bar = new JScrollBar[1];
 		SwingUtilities.invokeAndWait(() ->
@@ -187,7 +187,7 @@ public class EnhancedMessagingPanelTest
 	{
 		SwingUtilities.invokeAndWait(() ->
 		{
-			ConversationService service = new ConversationService();
+			ConversationHistory service = new ConversationHistory();
 			service.record(message("Alice", "Private message", false));
 			EnhancedMessagingPanel panel = createPanel(service);
 			service.clear();
@@ -199,7 +199,7 @@ public class EnhancedMessagingPanelTest
 		});
 	}
 
-	private EnhancedMessagingPanel createPanel(ConversationService service)
+	private EnhancedMessagingPanel createPanel(ConversationHistory service)
 	{
 		return new EnhancedMessagingPanel(service, null, new FriendStatusService(), () -> { });
 	}
@@ -307,7 +307,7 @@ public class EnhancedMessagingPanelTest
 	{
 		SwingUtilities.invokeAndWait(() ->
 		{
-			ConversationService service = new ConversationService();
+			ConversationHistory service = new ConversationHistory();
 			service.record(message("Alice", "Arrived while hidden", false));
 			EnhancedMessagingPanel panel = createPanel(service);
 			Conversation alice = service.getConversations().get(0);

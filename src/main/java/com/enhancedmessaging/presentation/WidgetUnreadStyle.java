@@ -1,4 +1,4 @@
-package com.enhancedmessaging.domain;
+package com.enhancedmessaging.presentation;
 
 public enum WidgetUnreadStyle
 {

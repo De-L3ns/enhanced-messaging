@@ -1,6 +1,8 @@
 package com.enhancedmessaging.infrastructure;
 
 import com.enhancedmessaging.domain.PrivateMessage;
+import com.enhancedmessaging.domain.Conversation;
+import com.enhancedmessaging.domain.ConversationHistory;
 import java.time.Instant;
 import net.runelite.api.ChatMessageType;
 import net.runelite.api.events.ChatMessage;
@@ -14,6 +16,25 @@ import static org.junit.Assert.assertTrue;
 
 public class PrivateMessageMapperTest
 {
+	@Test
+	public void groupsIncomingAndOutgoingMessagesDespiteNameFormatting()
+	{
+		ConversationHistory service = new ConversationHistory();
+		service.record(PrivateMessageMapper.fromEvent(new ChatMessage(null, ChatMessageType.PRIVATECHAT,
+			"<img=2>Alice\u00a0Smith", "Hello", "", 100)));
+		service.record(PrivateMessageMapper.fromEvent(new ChatMessage(null, ChatMessageType.PRIVATECHATOUT,
+			"alice_smith", "Hi back", "", 101)));
+
+		assertEquals(1, service.getConversations().size());
+		Conversation conversation = service.getConversations().get(0);
+		assertEquals("Alice Smith", conversation.getPlayerName());
+		assertEquals(2, conversation.getMessageCount());
+		assertEquals("Hello", conversation.getMessages().get(0).getText());
+		assertFalse(conversation.getMessages().get(0).isOutgoing());
+		assertEquals("Hi back", conversation.getMessages().get(1).getText());
+		assertTrue(conversation.getMessages().get(1).isOutgoing());
+	}
+
 	@Test
 	public void capturesOnlyPrivateMessageTypes()
 	{

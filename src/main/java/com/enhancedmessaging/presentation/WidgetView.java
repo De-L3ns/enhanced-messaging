@@ -1,4 +1,4 @@
-package com.enhancedmessaging.application;
+package com.enhancedmessaging.presentation;
 
 import com.enhancedmessaging.domain.FriendStatus;
 import com.enhancedmessaging.domain.PrivateMessage;

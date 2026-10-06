@@ -2,7 +2,7 @@ package com.enhancedmessaging.presentation;
 
 import com.enhancedmessaging.domain.PrivateMessage;
 import com.enhancedmessaging.application.BossIconService;
-import com.enhancedmessaging.application.BossIconSource;
+import com.enhancedmessaging.application.BossIconService.Source;
 import java.awt.Component;
 import java.awt.Container;
 import java.awt.image.BufferedImage;
@@ -177,9 +177,9 @@ public class MessageTranscriptTest
 		});
 	}
 
-	private BossIconSource iconSource(CompletableFuture<BufferedImage> loaded)
+	private Source iconSource(CompletableFuture<BufferedImage> loaded)
 	{
-		return new BossIconSource()
+		return new Source()
 		{
 			public String canonicalName(String name) { return name.equals("Vardorvis") ? name : null; }
 			public CompletableFuture<BufferedImage> load(String name) { return loaded; }

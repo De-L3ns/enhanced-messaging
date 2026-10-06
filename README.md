@@ -153,3 +153,18 @@ footer never hides a chat that fits. The widget hides on logout and mouse action
 are removed when the plugin stops. Drawing uses cached pixels with no disk access
 or history scanning. Resizing rebuilds the compact grid and hit areas on the UI
 thread. Glow is cached too, and compact mode skips message-preview snapshots.
+
+## Code structure
+
+- **Domain** owns messages, conversations, and `ConversationHistory`: ordering,
+  unread state, history merging, and retention limits.
+- **Application** coordinates retention and account changes, manages avatar and
+  friend state, and defines asynchronous storage interfaces.
+- **Presentation** contains the sidebar and widget, including `WidgetPresenter`,
+  display snapshots, layout options, and unread indicator styles.
+- **Infrastructure** adapts RuneLite data and implements local persistence.
+  `LocalHistoryStorage` owns compressed JSON files and the serial background IO
+  queue; `HistoryCoordinator` owns when history is loaded, saved, or deleted.
+
+`EnhancedMessagingPlugin` wires these components together and manages RuneLite
+subscriptions, UI registration, and shutdown.

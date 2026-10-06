@@ -2,7 +2,7 @@ package com.enhancedmessaging.presentation;
 
 import com.enhancedmessaging.application.AvatarService;
 import com.enhancedmessaging.application.BossIconService;
-import com.enhancedmessaging.application.ConversationService;
+import com.enhancedmessaging.domain.ConversationHistory;
 import com.enhancedmessaging.application.FriendStatusService;
 import com.enhancedmessaging.domain.Conversation;
 import java.awt.BasicStroke;
@@ -23,6 +23,7 @@ import java.awt.image.BufferedImage;
 import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
+import java.util.function.Function;
 import javax.swing.BorderFactory;
 import javax.swing.DefaultListModel;
 import javax.swing.JButton;
@@ -45,7 +46,7 @@ import net.runelite.client.util.Filepath;
 
 public class EnhancedMessagingPanel extends PluginPanel
 {
-	private final ConversationService conversationService;
+	private final ConversationHistory history;
 	private final AvatarService avatars;
 	private final FriendStatusService friends;
 	private final DefaultListModel<Conversation> conversationModel = new DefaultListModel<>();
@@ -68,17 +69,26 @@ public class EnhancedMessagingPanel extends PluginPanel
 	private long transcriptRevision;
 	private Runnable readChanged = () -> { };
 
-	public EnhancedMessagingPanel(ConversationService conversationService, AvatarService avatars,
+	public EnhancedMessagingPanel(ConversationHistory history, AvatarService avatars,
 		FriendStatusService friends, Runnable deleteSavedHistory)
 	{
 		super(false);
-		this.conversationService = conversationService;
+		this.history = history;
 		this.avatars = avatars;
 		this.friends = friends;
 		setLayout(new BorderLayout(0, 8));
 		setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
 		setBackground(ColorScheme.DARK_GRAY_COLOR);
 
+		add(createConversationList(), BorderLayout.NORTH);
+		add(createConversationView(), BorderLayout.CENTER);
+		add(createStorageControls(deleteSavedHistory), BorderLayout.SOUTH);
+		addHierarchyListener(visibilityListener);
+		refresh();
+	}
+
+	private JPanel createConversationList()
+	{
 		JPanel top = new JPanel(new BorderLayout(0, 8));
 		top.setOpaque(false);
 		JLabel title = new JLabel("Enhanced Messaging");
@@ -96,36 +106,22 @@ public class EnhancedMessagingPanel extends PluginPanel
 				showConversation(true);
 			}
 		});
-		conversationList.addMouseListener(new MouseAdapter()
+		addAvatarMenu(conversationList, event ->
 		{
-			@Override
-			public void mousePressed(MouseEvent event)
-			{
-				popup(event);
-			}
-
-			@Override
-			public void mouseReleased(MouseEvent event)
-			{
-				popup(event);
-			}
-
-			private void popup(MouseEvent event)
-			{
-				int index = conversationList.locationToIndex(event.getPoint());
-				if (event.isPopupTrigger() && index >= 0 && conversationList.getCellBounds(index, index).contains(event.getPoint()))
-				{
-					showAvatarMenu(conversationModel.get(index).getPlayerName(), conversationList, event);
-				}
-			}
+			int index = conversationList.locationToIndex(event.getPoint());
+			return index >= 0 && conversationList.getCellBounds(index, index).contains(event.getPoint())
+				? conversationModel.get(index).getPlayerName() : null;
 		});
 		JScrollPane conversationsScroll = new JScrollPane(conversationList);
 		conversationsScroll.setPreferredSize(new Dimension(0, 112));
 		conversationsScroll.setMinimumSize(new Dimension(0, 0));
 		conversationsScroll.setBorder(null);
 		top.add(conversationsScroll, BorderLayout.CENTER);
-		add(top, BorderLayout.NORTH);
+		return top;
+	}
 
+	private JPanel createConversationView()
+	{
 		JPanel conversation = new JPanel(new BorderLayout(0, 8));
 		conversation.setOpaque(false);
 		conversationTitle.putClientProperty("html.disable", true);
@@ -135,28 +131,10 @@ public class EnhancedMessagingPanel extends PluginPanel
 		conversationTitle.setMinimumSize(new Dimension(0, 26));
 		conversationTitle.setPreferredSize(new Dimension(0, 26));
 		conversationTitle.setToolTipText("Right-click to change this player's avatar locally.");
-		conversationTitle.addMouseListener(new MouseAdapter()
+		addAvatarMenu(conversationTitle, event ->
 		{
-			@Override
-			public void mousePressed(MouseEvent event)
-			{
-				popup(event);
-			}
-
-			@Override
-			public void mouseReleased(MouseEvent event)
-			{
-				popup(event);
-			}
-
-			private void popup(MouseEvent event)
-			{
-				Conversation selected = conversationList.getSelectedValue();
-				if (event.isPopupTrigger() && selected != null)
-				{
-					showAvatarMenu(selected.getPlayerName(), conversationTitle, event);
-				}
-			}
+			Conversation selected = conversationList.getSelectedValue();
+			return selected == null ? null : selected.getPlayerName();
 		});
 		conversation.add(conversationTitle, BorderLayout.NORTH);
 		transcriptScroll.setMinimumSize(new Dimension(0, 0));
@@ -164,8 +142,11 @@ public class EnhancedMessagingPanel extends PluginPanel
 		transcriptScroll.setBorder(null);
 		transcriptScroll.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
 		conversation.add(transcriptScroll, BorderLayout.CENTER);
-		add(conversation, BorderLayout.CENTER);
+		return conversation;
+	}
 
+	private JPanel createStorageControls(Runnable deleteSavedHistory)
+	{
 		JPanel footer = new JPanel(new GridLayout(0, 1, 0, 4));
 		footer.setOpaque(false);
 		storageStatus.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
@@ -184,9 +165,7 @@ public class EnhancedMessagingPanel extends PluginPanel
 			}
 		});
 		footer.add(deleteHistory);
-		add(footer, BorderLayout.SOUTH);
-		addHierarchyListener(visibilityListener);
-		refresh();
+		return footer;
 	}
 
 	public void setStorageState(boolean canDelete, String status)
@@ -260,7 +239,7 @@ public class EnhancedMessagingPanel extends PluginPanel
 			return;
 		}
 		Conversation previous = conversationList.getSelectedValue();
-		List<Conversation> conversations = conversationService.getConversations();
+		List<Conversation> conversations = history.getConversations();
 		refreshing = true;
 		conversationModel.clear();
 		int selectedIndex = 0;
@@ -324,6 +303,27 @@ public class EnhancedMessagingPanel extends PluginPanel
 	private AvatarIcon iconFor(String player)
 	{
 		return new AvatarIcon(avatars == null ? null : avatars.imageFor(player), friends.statusFor(player));
+	}
+
+	private void addAvatarMenu(Component target, Function<MouseEvent, String> playerAt)
+	{
+		target.addMouseListener(new MouseAdapter()
+		{
+			@Override
+			public void mousePressed(MouseEvent event) { popup(event); }
+
+			@Override
+			public void mouseReleased(MouseEvent event) { popup(event); }
+
+			private void popup(MouseEvent event)
+			{
+				if (event.isPopupTrigger())
+				{
+					String player = playerAt.apply(event);
+					if (player != null) { showAvatarMenu(player, target, event); }
+				}
+			}
+		});
 	}
 
 	private void showAvatarMenu(String player, Component target, MouseEvent event)

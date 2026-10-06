@@ -1,8 +1,11 @@
-package com.enhancedmessaging.application;
+package com.enhancedmessaging.presentation;
 
+import com.enhancedmessaging.application.AvatarService;
+import com.enhancedmessaging.application.AvatarStorage;
+import com.enhancedmessaging.application.FriendStatusService;
+import com.enhancedmessaging.domain.ConversationHistory;
 import com.enhancedmessaging.domain.FriendStatus;
 import com.enhancedmessaging.domain.PrivateMessage;
-import com.enhancedmessaging.domain.WidgetUnreadStyle;
 import java.awt.image.BufferedImage;
 import java.time.Instant;
 import java.util.List;
@@ -15,11 +18,11 @@ import org.junit.Test;
 
 import static org.junit.Assert.*;
 
-public class WidgetServiceTest
+public class WidgetPresenterTest
 {
-	private final ConversationService conversations = new ConversationService();
+	private final ConversationHistory conversations = new ConversationHistory();
 	private final FriendStatusService friends = new FriendStatusService();
-	private final WidgetService widget = new WidgetService(conversations, null, friends);
+	private final WidgetPresenter widget = new WidgetPresenter(conversations, null, friends);
 
 	@Before
 	public void setUp() { widget.switchAccount("a"); }
@@ -127,7 +130,7 @@ public class WidgetServiceTest
 		};
 		AvatarService avatars = new AvatarService(storage, Runnable::run, () -> { }, message -> fail(message));
 		avatars.switchAccount("a");
-		WidgetService withAvatars = new WidgetService(conversations, avatars, friends);
+		WidgetPresenter withAvatars = new WidgetPresenter(conversations, avatars, friends);
 		record("Alice", "Private preview text", false);
 		assertNull(withAvatars.snapshot(options(1, 3, false)).getChats().get(0).getAvatar());
 		WidgetView.Chat compact = withAvatars.snapshot(options(1, 3, true)).getChats().get(0);
