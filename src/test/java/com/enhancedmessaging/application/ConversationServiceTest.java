@@ -170,6 +170,49 @@ public class ConversationServiceTest
 	}
 
 	@Test
+	public void resolvedCommandsReplaceTextWithoutReorderingOrChangingUnreadState()
+	{
+		ConversationService service = new ConversationService();
+		PrivateMessage command = message("Alice", "!kc zulrah");
+		PrivateMessage newest = message("Bob", "Newest incoming");
+		service.record(command);
+		service.record(newest);
+		service.getConversations().forEach(Conversation::markRead);
+		List<PrivateMessage> before = service.snapshot();
+		PrivateMessage replacement = new PrivateMessage(command.getId(), "alice", "Zulrah: 42 killed", Instant.now(), true);
+		assertTrue(service.updateMessage(replacement));
+		assertFalse(service.updateMessage(replacement));
+		assertEquals("Bob", service.getConversations().get(0).getPlayerName());
+		assertEquals("Bob", service.getLatestIncomingConversation().getPlayerName());
+		assertFalse(service.getConversations().stream().anyMatch(Conversation::isUnread));
+		PrivateMessage updated = service.getConversations().get(1).getMessages().get(0);
+		assertEquals("Zulrah: 42 killed", updated.getText());
+		assertEquals(command.getId(), updated.getId());
+		assertEquals(command.getTimestamp(), updated.getTimestamp());
+		assertEquals(command.isOutgoing(), updated.isOutgoing());
+		assertEquals("!kc zulrah", before.get(0).getText());
+		assertFalse(service.updateMessage(message("Alice", "Unrelated id")));
+		service.clear();
+		assertFalse(service.updateMessage(replacement));
+		assertTrue(service.isEmpty());
+	}
+
+	@Test
+	public void aSavedRawCommandCannotOverwriteTheResolvedLiveTextDuringAMerge()
+	{
+		ConversationService service = new ConversationService();
+		PrivateMessage command = message("Alice", "!kc zulrah");
+		service.record(command);
+		service.updateMessage(new PrivateMessage(command.getId(), "Alice", "Zulrah: 42 killed", command.getTimestamp(), false));
+		PrivateMessage previous = message("Alice", "Previous message");
+		service.mergeSavedHistory(List.of(previous, command));
+		assertEquals(2, service.snapshot().size());
+		assertEquals(previous, service.snapshot().get(0));
+		assertEquals("Zulrah: 42 killed", service.snapshot().get(1).getText());
+		assertEquals(command.getId(), service.snapshot().get(1).getId());
+	}
+
+	@Test
 	public void outgoingMessagesDoNotMarkTheConversationUnread()
 	{
 		ConversationService service = new ConversationService();

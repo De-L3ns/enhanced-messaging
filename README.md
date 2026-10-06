@@ -6,6 +6,22 @@ receive private messages through the normal game chat. Select a player to view
 their incoming and outgoing messages with timestamps. Conversations with recent
 activity appear first.
 
+RuneLite Chat Commands such as `!kc zulrah` may initially appear as the typed
+command while RuneLite performs its lookup. When RuneLite supplies replacement
+text, Enhanced Messaging updates the same entry on the next game tick, including
+regular widget previews and retained history. The original timestamp, position,
+and unread state stay unchanged; the result is not added as a second message.
+Failed or disabled lookups keep the original command. Older saved raw commands
+are not looked up again. Enhanced Messaging reads RuneLite's result without
+making additional network requests.
+
+Recognised boss kill-count results appear as a compact sidebar card with a yellow
+boss name, bold count, and the native boss icon used by RuneLite's Hiscores panel.
+Icons load asynchronously from RuneLite's game sprites and are cached only in
+memory. They require no additional downloads or saved assets. Restored results
+use the same card layout. Unknown bosses keep their original text display, and
+the message direction colours and timestamp remain visible.
+
 By default, history is kept in memory while you are logged in and the plugin is
 enabled. World hops retain it; logout, plugin disable, and restart clear the
 display. History begins when the plugin is enabled.
@@ -39,10 +55,14 @@ explicitly deleted. Storage errors are shown in the sidebar.
 Build with `javm exec --jdk temurin@11 ./gradlew.bat build` and launch the
 development client with `javm exec --jdk temurin@11 ./gradlew.bat run`.
 
-The sidebar uses the standard RuneLite background and message font, with yellow
-RuneScape names and small message boxes. Incoming messages use charcoal boxes
-on the left; outgoing messages use muted blue boxes on the right. Sender labels
-are omitted, while timestamps remain. Centred date labels separate messages by
+The sidebar uses the standard RuneLite background and 12px message font, with yellow
+RuneScape names and compact message boxes in one consistent column. Incoming
+messages use charcoal boxes with a gold left edge; outgoing messages use blue
+boxes with a blue right edge. Matching left/right arrows beside timestamps
+identify received/sent messages without relying only on colour. Both use
+the available width so long messages wrap into fewer lines, with paragraphs
+preserved. Sender labels are omitted. Small HH:mm timestamps sit inline beside short replies
+or below longer messages. Centred date labels separate messages by
 local calendar day, including the first visible day. New messages in the selected
 conversation always scroll the transcript to the latest entry.
 An orange **New** pill at the right of a conversation row indicates an
@@ -74,8 +94,13 @@ Enable **Message widget > Enable widget** in RuneLite's plugin configuration to
 show a movable panel inside the game window. Hold the overlay drag hotkey (Alt by
 default) to move it, or drag an edge or corner to resize either layout. RuneLite
 remembers position and size. Alt + right-click resets both. In the regular layout,
-width stays within 180-360 pixels and height is at least 60 pixels. Each chat
-keeps its own grey box with transparent gaps; there is no title or outer background.
+width stays within 180-360 pixels and height is at least 60 pixels. Each regular chat uses a small translucent dark backdrop fitted to its content,
+with transparent gaps. Player names use a crisp pixel font with a small shadow;
+message previews use standard UI text without a shadow. Headers, avatars and
+previews are tighter; there is no title, grey frame or outer background. Unused
+space within the dragged size remains transparent and passes clicks through.
+Regular avatars are 20 pixels, with RuneLite's native small RuneScape font for
+names and 11px message previews.
 
 Configuration starts with enabling the widget and choosing its layout, followed
 by visible chat count (1-10), recent previews

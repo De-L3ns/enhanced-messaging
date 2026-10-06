@@ -1,6 +1,7 @@
 package com.enhancedmessaging;
 
 import com.enhancedmessaging.application.AvatarService;
+import com.enhancedmessaging.application.BossIconService;
 import com.enhancedmessaging.application.ConversationService;
 import com.enhancedmessaging.application.FriendStatusService;
 import com.enhancedmessaging.application.HistoryCoordinator;
@@ -9,10 +10,12 @@ import com.enhancedmessaging.application.WidgetService;
 import com.enhancedmessaging.domain.PrivateMessage;
 import com.enhancedmessaging.domain.FriendStatus;
 import com.enhancedmessaging.infrastructure.AsyncHistoryStorage;
+import com.enhancedmessaging.infrastructure.ChatCommandMessages;
 import com.enhancedmessaging.infrastructure.FriendStatusReader;
 import com.enhancedmessaging.infrastructure.JsonHistoryRepository;
 import com.enhancedmessaging.infrastructure.LocalAvatarStorage;
 import com.enhancedmessaging.infrastructure.PrivateMessageMapper;
+import com.enhancedmessaging.infrastructure.RuneLiteBossIcons;
 import com.enhancedmessaging.presentation.EnhancedMessagingPanel;
 import com.enhancedmessaging.presentation.MessageWidgetOverlay;
 import com.enhancedmessaging.presentation.MessageWidgetMouseListener;
@@ -21,6 +24,7 @@ import com.google.inject.Provides;
 import java.util.Objects;
 import java.util.Collections;
 import java.util.Map;
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.function.Consumer;
@@ -47,6 +51,7 @@ import net.runelite.client.ui.ClientToolbar;
 import net.runelite.client.ui.NavigationButton;
 import net.runelite.client.ui.overlay.OverlayManager;
 import net.runelite.client.input.MouseManager;
+import net.runelite.client.game.SpriteManager;
 import okhttp3.OkHttpClient;
 
 @Slf4j
@@ -87,6 +92,9 @@ public class EnhancedMessagingPlugin extends Plugin
 
 	@Inject
 	private MouseManager mouseManager;
+
+	@Inject
+	private SpriteManager spriteManager;
 
 	private AsyncHistoryStorage storage;
 	private LocalAvatarStorage avatarStorage;
@@ -134,6 +142,11 @@ public class EnhancedMessagingPlugin extends Plugin
 			});
 			session.panel = new EnhancedMessagingPanel(session.conversations, session.avatars, session.friends,
 				() -> session.history.deleteHistory());
+			session.bossIcons = new BossIconService(new RuneLiteBossIcons(spriteManager), SwingUtilities::invokeLater, () ->
+			{
+				if (activeSession == session && !session.closed) { session.panel.refreshBossIcons(); }
+			});
+			session.panel.setBossIcons(session.bossIcons);
 			session.widgetService = new WidgetService(session.conversations, session.avatars, session.friends);
 			session.panel.setReadChanged(() -> refreshWidget(session));
 			session.history = new HistoryCoordinator(session.conversations, storage, scheduler,
@@ -200,6 +213,8 @@ public class EnhancedMessagingPlugin extends Plugin
 			session.lastFriendStatuses = null;
 		}
 		session.requestedAccount = account;
+		session.commandMessages.switchAccount(account);
+		session.commandMessages.track(event, message);
 		queue(session, current ->
 		{
 			switchAccount(current, account);
@@ -222,6 +237,7 @@ public class EnhancedMessagingPlugin extends Plugin
 			if (session != null)
 			{
 				session.requestedAccount = null;
+				session.commandMessages.switchAccount(null);
 				session.lastFriendStatuses = null;
 					queue(session, current ->
 					{
@@ -260,7 +276,18 @@ public class EnhancedMessagingPlugin extends Plugin
 	@Subscribe
 	public void onGameTick(GameTick event)
 	{
-		synchronizeAccount(activeSession);
+		Session session = activeSession;
+		synchronizeAccount(session);
+		if (session == null || session.closed || activeSession != session || client.getGameState() != GameState.LOGGED_IN) { return; }
+		String account = session.requestedAccount;
+		List<PrivateMessage> updates = session.commandMessages.poll();
+		if (!updates.isEmpty())
+		{
+			queue(session, current ->
+			{
+				if (Objects.equals(current.account, account)) { updates.forEach(current.history::updateMessage); }
+			});
+		}
 	}
 
 	@Subscribe
@@ -332,6 +359,7 @@ public class EnhancedMessagingPlugin extends Plugin
 		if (!Objects.equals(session.requestedAccount, account))
 		{
 			session.requestedAccount = account;
+			session.commandMessages.switchAccount(account);
 			session.lastFriendStatuses = null;
 			queue(session, current -> switchAccount(current, account));
 		}
@@ -406,10 +434,12 @@ public class EnhancedMessagingPlugin extends Plugin
 	{
 		if (session.closed) { return; }
 		session.closed = true;
+		clientThread.invoke(session.commandMessages::clear);
 		session.widget.publish(null);
 		mouseManager.unregisterMouseListener(session.widgetMouse);
 		overlayManager.remove(session.widget);
 		session.panel.close();
+		session.bossIcons.close();
 		session.avatars.close();
 		session.friends.close();
 		session.history.close();
@@ -432,6 +462,7 @@ public class EnhancedMessagingPlugin extends Plugin
 	private static class Session
 	{
 		private final ConversationService conversations = new ConversationService();
+		private final ChatCommandMessages commandMessages = new ChatCommandMessages();
 		private final FriendStatusService friends = new FriendStatusService();
 		private String account;
 		private boolean updatingAccount;
@@ -444,6 +475,7 @@ public class EnhancedMessagingPlugin extends Plugin
 		private volatile String requestedAccount;
 		private HistoryCoordinator history;
 		private AvatarService avatars;
+		private BossIconService bossIcons;
 		private EnhancedMessagingPanel panel;
 		private NavigationButton navigationButton;
 	}

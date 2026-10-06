@@ -85,6 +85,21 @@ public class WidgetServiceTest
 	}
 
 	@Test
+	public void resolvedCommandsRefreshPreviewsWithoutDuplicatingTheMessage()
+	{
+		PrivateMessage command = new PrivateMessage("Alice", "!kc zulrah", Instant.ofEpochSecond(100), false);
+		conversations.record(command);
+		WidgetView before = widget.snapshot(options(1, 1, false));
+		conversations.updateMessage(new PrivateMessage(command.getId(), "Alice", "Zulrah: 42 killed", command.getTimestamp(), false));
+		WidgetView.Chat after = widget.snapshot(options(1, 1, false)).getChats().get(0);
+		assertEquals("Zulrah: 42 killed", after.getMessages().get(0).getText());
+		assertEquals(command.getId(), after.getMessages().get(0).getId());
+		assertEquals(1, after.getMessages().size());
+		assertTrue(after.isUnread());
+		assertEquals("!kc zulrah", before.getChats().get(0).getMessages().get(0).getText());
+	}
+
+	@Test
 	public void accountChangesRejectOldClicksIncludingAfterLoggingBackIntoTheSameAccount()
 	{
 		long token = widget.snapshot(options(1, 1, false)).getContextToken();

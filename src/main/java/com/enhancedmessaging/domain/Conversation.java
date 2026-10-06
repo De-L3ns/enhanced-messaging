@@ -36,6 +36,25 @@ public class Conversation
 		return Collections.unmodifiableList(new ArrayList<>(messages));
 	}
 
+	public boolean updateText(String id, String text)
+	{
+		List<PrivateMessage> updated = new ArrayList<>(messages);
+		for (int i = 0; i < updated.size(); i++)
+		{
+			PrivateMessage original = updated.get(i);
+			if (original.getId().equals(id))
+			{
+				if (original.getText().equals(text)) { return false; }
+				updated.set(i, new PrivateMessage(original.getId(), original.getPlayerName(), text,
+					original.getTimestamp(), original.isOutgoing()));
+				messages.clear();
+				messages.addAll(updated);
+				return true;
+			}
+		}
+		return false;
+	}
+
 	public int getMessageCount()
 	{
 		return messages.size();

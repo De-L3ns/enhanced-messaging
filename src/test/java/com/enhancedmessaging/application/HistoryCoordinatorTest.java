@@ -35,6 +35,44 @@ public class HistoryCoordinatorTest
 	}
 
 	@Test
+	public void resolvedCommandTextIsSavedAfterTheRawMessageWasAlreadyWritten()
+	{
+		startRetaining();
+		PrivateMessage command = message("!kc zulrah");
+		coordinator.record(command);
+		scheduler.runTasks();
+		assertEquals("!kc zulrah", storage.saves.get(0).get(0).getText());
+		PrivateMessage updated = new PrivateMessage(command.getId(), command.getPlayerName(), "Zulrah: 42 killed",
+			command.getTimestamp(), command.isOutgoing());
+		coordinator.updateMessage(updated);
+		scheduler.runTasks();
+		assertEquals(2, storage.saves.size());
+		assertEquals(List.of(updated), storage.saves.get(1));
+		coordinator.updateMessage(updated);
+		scheduler.runTasks();
+		assertEquals("An unchanged edit must not create another save", 2, storage.saves.size());
+		coordinator.deleteHistory();
+		coordinator.updateMessage(updated);
+		assertTrue(conversations.isEmpty());
+	}
+
+	@Test
+	public void resolutionDuringHistoryLoadSurvivesAnOlderSavedCopy()
+	{
+		coordinator.switchAccount("account-a");
+		coordinator.setRetentionEnabled(true);
+		PrivateMessage command = message("!kc zulrah");
+		coordinator.record(command);
+		PrivateMessage updated = new PrivateMessage(command.getId(), command.getPlayerName(), "Zulrah: 42 killed",
+			command.getTimestamp(), command.isOutgoing());
+		coordinator.updateMessage(updated);
+		storage.loads.get(0).complete(List.of(command));
+		scheduler.runTasks();
+		assertEquals(List.of(updated), conversations.snapshot());
+		assertEquals(List.of(updated), storage.saves.get(0));
+	}
+
+	@Test
 	public void disabledByDefaultDoesNotReadOrWriteFiles()
 	{
 		coordinator.switchAccount("account-a");

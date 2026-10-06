@@ -30,11 +30,18 @@ import net.runelite.client.ui.overlay.OverlayPosition;
 
 public class MessageWidgetOverlay extends Overlay
 {
-	private static final Font BODY = FontManager.getDefaultFont().deriveFont(12f);
+	private static final Font BODY = FontManager.getDefaultFont().deriveFont(11f);
+	private static final Font NAME = FontManager.getRunescapeSmallFont();
 	private static final Font SMALL = FontManager.getDefaultFont().deriveFont(10f);
 	private static final Font BADGE = SMALL.deriveFont(Font.BOLD);
 	private static final int FOOTER_HEIGHT = 22;
 	private static final int DEFAULT_WIDTH = 240;
+	private static final int REGULAR_PADDING = 4;
+	private static final int REGULAR_HEADER_HEIGHT = 28;
+	private static final int PREVIEW_LINE_HEIGHT = 14;
+	private static final int REGULAR_AVATAR_SIZE = 20;
+	private static final Color CHAT_BACKDROP = new Color(15, 17, 19, 145);
+	private static final Color TEXT_SHADOW = new Color(0, 0, 0, 220);
 	private final BooleanSupplier visible;
 	private final BooleanSupplier interactive;
 	private final IntSupplier canvasHeight;
@@ -141,7 +148,7 @@ public class MessageWidgetOverlay extends Overlay
 				0, 0, current.image.getWidth(), contentHeight, null);
 			if (footer)
 			{
-				g.setFont(SMALL);
+				setTextFont(g, SMALL);
 				g.setColor(ColorScheme.TEXT_COLOR);
 				g.drawString("More chats in sidebar", 10, height - 8);
 			}
@@ -193,69 +200,76 @@ public class MessageWidgetOverlay extends Overlay
 		BufferedImage work = new BufferedImage(width, 1600, BufferedImage.TYPE_INT_ARGB);
 		Graphics2D g = work.createGraphics();
 		List<Row> rows = new ArrayList<>();
-		int y = 8;
+		int y = REGULAR_PADDING;
 		try
 		{
 			g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
 			for (WidgetView.Chat chat : view.getChats())
 			{
 				List<PreviewLine> previews = new ArrayList<>();
-				g.setFont(BODY);
+				setTextFont(g, BODY);
 				for (PrivateMessage message : chat.getMessages())
 				{
-					for (String line : wrap(message.getText(), g.getFontMetrics(), width - 32))
+					for (String line : wrap(message.getText(), g.getFontMetrics(), width - REGULAR_PADDING * 4))
 					{
 						previews.add(new PreviewLine(line, message.isOutgoing()));
 					}
 				}
 				if (chat.getMessages().isEmpty() && view.getOptions().getPreviewCount() > 0)
 				{
-					for (String line : wrap("No messages this session.", g.getFontMetrics(), width - 32))
+					for (String line : wrap("No messages this session.", g.getFontMetrics(), width - REGULAR_PADDING * 4))
 					{
 						previews.add(new PreviewLine(line, false));
 					}
 				}
-				int height = 36 + previews.size() * 16;
-				g.setColor(ColorScheme.MEDIUM_GRAY_COLOR);
-				g.fillRect(8, y, width - 16, height);
-				int nameX = 14;
+				int height = REGULAR_HEADER_HEIGHT + previews.size() * PREVIEW_LINE_HEIGHT;
+				boolean avatar = view.getOptions().showsAvatars();
 				FriendStatus status = view.getOptions().isStatus() ? chat.getStatus() : FriendStatus.UNKNOWN;
-				if (view.getOptions().showsAvatars())
+				int nameX = REGULAR_PADDING * 2 + (avatar ? 26 : status != FriendStatus.UNKNOWN ? 13 : 0);
+				boolean badge = view.getOptions().isUnread() && !view.getOptions().usesGlow() && chat.isUnread();
+				setTextFont(g, BADGE);
+				int badgeWidth = badge ? g.getFontMetrics().stringWidth("New") + 14 : 0;
+				setTextFont(g, NAME);
+				int contentWidth = nameX - REGULAR_PADDING + g.getFontMetrics().stringWidth(chat.getPlayer())
+					+ (badge ? badgeWidth + 12 : 0) + REGULAR_PADDING;
+				setTextFont(g, BODY);
+				for (PreviewLine line : previews)
 				{
-					paintAvatar(g, chat, nameX, y + 4, status, view.getOptions());
-					nameX += 32;
+					contentWidth = Math.max(contentWidth, g.getFontMetrics().stringWidth(line.text) + REGULAR_PADDING * 2);
+				}
+				int rowWidth = Math.min(width - REGULAR_PADDING * 2, contentWidth);
+				g.setColor(CHAT_BACKDROP);
+				g.fillRoundRect(REGULAR_PADDING, y, rowWidth, height, 4, 4);
+				if (avatar)
+				{
+					paintAvatar(g, chat, REGULAR_PADDING * 2, y + 2, status, view.getOptions(), REGULAR_AVATAR_SIZE);
 				}
 				else if (status != FriendStatus.UNKNOWN)
 				{
 					g.setColor(status == FriendStatus.ONLINE ? new Color(70, 190, 90) : Color.GRAY);
-					g.fillOval(nameX, y + 15, 7, 7);
-					nameX += 13;
+					g.fillOval(REGULAR_PADDING * 2, y + 11, 7, 7);
 				}
-				int nameEnd = width - 18;
-				if (view.getOptions().isUnread() && !view.getOptions().usesGlow() && chat.isUnread())
+				int nameEnd = rowWidth;
+				if (badge)
 				{
-					g.setFont(BADGE);
-					int badgeWidth = g.getFontMetrics().stringWidth("New") + 14;
 					nameEnd -= badgeWidth + 6;
-					paintBadge(g, nameEnd, y + 9);
+					paintBadge(g, nameEnd, y + 5);
 					nameEnd -= 6;
 				}
-				g.setFont(FontManager.getRunescapeFont());
-				g.setColor(Color.YELLOW);
-				g.drawString(ellipsize(chat.getPlayer(), g.getFontMetrics(), nameEnd - nameX), nameX, y + 22);
-				g.setFont(BODY);
-				g.setColor(ColorScheme.TEXT_COLOR);
-				int lineY = y + 46;
+				setTextFont(g, NAME);
+				shadowedText(g, ellipsize(chat.getPlayer(), g.getFontMetrics(), nameEnd - nameX), nameX, y + 18, Color.YELLOW);
+				setTextFont(g, BODY);
+				int lineY = y + REGULAR_HEADER_HEIGHT + 11;
 				for (PreviewLine line : previews)
 				{
 					g.setColor(line.outgoing ? MessageStyle.OUTGOING_TEXT : ColorScheme.TEXT_COLOR);
-					g.drawString(line.text, 16, lineY);
-					lineY += 16;
+					g.drawString(line.text, REGULAR_PADDING * 2, lineY);
+					lineY += PREVIEW_LINE_HEIGHT;
 				}
-				rows.add(new Row(chat.getPlayer(), new Rectangle(8, y, width - 16, height)));
-				y += height + 5;
+				rows.add(new Row(chat.getPlayer(), new Rectangle(REGULAR_PADDING, y, rowWidth, height)));
+				y += height + 6;
 			}
-			g.setFont(BODY);
+			setTextFont(g, BODY);
 			g.setColor(ColorScheme.TEXT_COLOR);
 			if (rows.isEmpty())
 			{
@@ -276,6 +290,23 @@ public class MessageWidgetOverlay extends Overlay
 		Graphics2D copy = image.createGraphics();
 		try { copy.drawImage(work, 0, 0, null); } finally { copy.dispose(); }
 		return new Frame(image, List.copyOf(rows), view);
+	}
+
+	private static void setTextFont(Graphics2D g, Font font)
+	{
+		g.setFont(font);
+		// Pixel font names need hard edges; UI fonts use grayscale AA on the transparent image.
+		g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, font == NAME
+			? RenderingHints.VALUE_TEXT_ANTIALIAS_OFF : RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
+		g.setRenderingHint(RenderingHints.KEY_FRACTIONALMETRICS, RenderingHints.VALUE_FRACTIONALMETRICS_OFF);
+	}
+
+	private static void shadowedText(Graphics2D g, String text, int x, int y, Color color)
+	{
+		g.setColor(TEXT_SHADOW);
+		g.drawString(text, x + 1, y + 1);
+		g.setColor(color);
+		g.drawString(text, x, y);
 	}
 
 	private Frame buildCompact(WidgetView view)
@@ -328,7 +359,7 @@ public class MessageWidgetOverlay extends Overlay
 
 	private static void paintBadge(Graphics2D g, int x, int y)
 	{
-		g.setFont(BADGE);
+		setTextFont(g, BADGE);
 		int width = g.getFontMetrics().stringWidth("New") + 14;
 		g.setColor(ColorScheme.BRAND_ORANGE);
 		g.fillRoundRect(x, y, width, 18, 18, 18);
@@ -338,16 +369,28 @@ public class MessageWidgetOverlay extends Overlay
 
 	private static void paintAvatar(Graphics2D g, WidgetView.Chat chat, int x, int y, FriendStatus status, WidgetOptions options)
 	{
-		if (options.usesGlow() && chat.isUnread())
+		paintAvatar(g, chat, x, y, status, options, 24);
+	}
+
+	private static void paintAvatar(Graphics2D graphics, WidgetView.Chat chat, int x, int y, FriendStatus status, WidgetOptions options, int size)
+	{
+		Graphics2D g = (Graphics2D) graphics.create();
+		try
 		{
-			int[] opacity = {24, 40, 80, 150};
-			for (int i = 0; i < opacity.length; i++)
+			g.translate(x, y);
+			g.scale(size / 24.0, size / 24.0);
+			if (options.usesGlow() && chat.isUnread())
 			{
-				g.setColor(new Color(255, 207, 86, opacity[i]));
-				g.fillOval(x - 4 + i, y - 2 + i, 32 - i * 2, 32 - i * 2);
+				int[] opacity = {24, 40, 80, 150};
+				for (int i = 0; i < opacity.length; i++)
+				{
+					g.setColor(new Color(255, 207, 86, opacity[i]));
+					g.fillOval(-4 + i, -2 + i, 32 - i * 2, 32 - i * 2);
+				}
 			}
+			new AvatarIcon(chat.getAvatar(), status).paintIcon(null, g, 0, 0);
 		}
-		new AvatarIcon(chat.getAvatar(), status).paintIcon(null, g, x, y);
+		finally { g.dispose(); }
 	}
 
 	static List<String> wrap(String text, FontMetrics metrics, int width)

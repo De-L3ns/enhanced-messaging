@@ -180,22 +180,21 @@ public class MessageWidgetOverlayTest
 	{
 		SwingUtilities.invokeAndWait(() ->
 		{
-			// A two-line preview ends at y=76; the remaining eight pixels are padding.
+			// A two-line preview ends at y=60; the rest is spacing and padding.
 			overlay.publish(new WidgetView(options(true), List.of(new WidgetView.Chat("Alice", true,
 				FriendStatus.ONLINE, null, List.of(message()))), 7));
 			overlay.setBounds(new Rectangle(0, 0, 240, 0));
-			assertEquals(84, render(overlay).height);
-			overlay.setPreferredSize(new Dimension(240, 76));
+			assertEquals(69, render(overlay).height);
+			overlay.setPreferredSize(new Dimension(240, 60));
 		});
 		SwingUtilities.invokeAndWait(() ->
 		{
-			BufferedImage image = new BufferedImage(240, 76, BufferedImage.TYPE_INT_ARGB);
+			BufferedImage image = new BufferedImage(240, 60, BufferedImage.TYPE_INT_ARGB);
 			Graphics2D graphics = image.createGraphics();
-			try { assertEquals(76, overlay.render(graphics).height); } finally { graphics.dispose(); }
+			try { assertEquals(60, overlay.render(graphics).height); } finally { graphics.dispose(); }
 			assertNotNull(overlay.actionAt(new Point(20, 20)));
-			assertNotNull(overlay.actionAt(new Point(20, 75)));
-			assertEquals("The footer must not replace a chat that fits",
-				net.runelite.client.ui.ColorScheme.MEDIUM_GRAY_COLOR.getRGB(), image.getRGB(10, 70));
+			assertNotNull(overlay.actionAt(new Point(20, 59)));
+			assertTrue("The footer must not replace a chat that fits", (image.getRGB(6, 55) >>> 24) > 0);
 		});
 	}
 
@@ -215,7 +214,7 @@ public class MessageWidgetOverlayTest
 			BufferedImage image = new BufferedImage(240, 90, BufferedImage.TYPE_INT_ARGB);
 			Graphics2D graphics = image.createGraphics();
 			try { assertEquals(90, overlay.render(graphics).height); } finally { graphics.dispose(); }
-			assertNotNull(overlay.actionAt(new Point(20, 75)));
+			assertNotNull(overlay.actionAt(new Point(20, 59)));
 			assertNull(overlay.actionAt(new Point(20, 85)));
 			assertEquals("No partial second chat should remain visible",
 				0, image.getRGB(10, 83));
@@ -388,18 +387,19 @@ public class MessageWidgetOverlayTest
 		{
 			for (boolean compact : List.of(true, false))
 			{
-				int haloX = compact ? 5 : 11;
-				int haloY = compact ? 20 : 26;
-				for (boolean unread : List.of(true, false))
+				int haloX = 5;
+				int haloY = compact ? 20 : 17;
+				int plain = 0;
+				for (boolean unread : List.of(false, true))
 				{
 					overlay.publish(new WidgetView(glowOptions(compact, true), List.of(
 						new WidgetView.Chat("Alice", unread, FriendStatus.UNKNOWN, null, List.of())), 7));
 					BufferedImage image = new BufferedImage(240, 100, BufferedImage.TYPE_INT_ARGB);
 					Graphics2D graphics = image.createGraphics();
 					try { overlay.render(graphics); } finally { graphics.dispose(); }
-					int plain = compact ? 0 : net.runelite.client.ui.ColorScheme.MEDIUM_GRAY_COLOR.getRGB();
+					if (!unread) { plain = image.getRGB(haloX, haloY); }
 					assertEquals(unread, image.getRGB(haloX, haloY) != plain);
-					assertEquals("Glow must not draw a New pill", plain, image.getRGB(compact ? 36 : 210, 20));
+					assertEquals("Glow must not draw a New pill", 0, image.getRGB(compact ? 36 : 210, 20));
 				}
 			}
 			overlay.publish(new WidgetView(glowOptions(true, false), List.of(
@@ -424,6 +424,31 @@ public class MessageWidgetOverlayTest
 			chats.add(new WidgetView.Chat(player, true, FriendStatus.UNKNOWN, null, List.of()));
 		}
 		return chats;
+	}
+
+	@Test
+	public void shortRegularChatsHaveCompactTranslucentBackdropsAndUnusedSpaceIsPassive()
+	{
+		WidgetOptions options = new WidgetOptions(true, 3, 1, false, true, true, false, WidgetUnreadStyle.PILL, true);
+		PrivateMessage shortMessage = new PrivateMessage("Alice", "Hello", Instant.ofEpochSecond(100), false);
+		overlay.publish(new WidgetView(options, List.of(
+			new WidgetView.Chat("Alice", false, FriendStatus.UNKNOWN, null, List.of(shortMessage)),
+			new WidgetView.Chat("Bob", false, FriendStatus.UNKNOWN, null, List.of(shortMessage))), 7));
+		overlay.setBounds(new Rectangle(0, 0, 240, 0));
+		BufferedImage image = new BufferedImage(240, 160, BufferedImage.TYPE_INT_ARGB);
+		Graphics2D graphics = image.createGraphics();
+		Dimension dimensions;
+		try { dimensions = overlay.render(graphics); } finally { graphics.dispose(); }
+		assertTrue("Two short chats should occupy less height", dimensions.height < 110);
+		MessageWidgetOverlay.Action first = overlay.actionAt(new Point(10, 15));
+		assertNotNull(first);
+		assertTrue("Short content must not fill a wide grey rectangle", first.getBounds().width < 150);
+		int alpha = image.getRGB(6, 35) >>> 24;
+		assertTrue("Terrain should show through the backdrop", alpha > 0 && alpha < 200);
+		assertEquals("The rest of the dragged width stays transparent", 0, image.getRGB(220, 35));
+		assertNull(overlay.actionAt(new Point(220, 35)));
+		assertNull(overlay.actionAt(new Point(10, 48)));
+		assertNotNull(overlay.actionAt(new Point(10, 60)));
 	}
 
 	@Test

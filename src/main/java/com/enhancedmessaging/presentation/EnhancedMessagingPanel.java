@@ -1,6 +1,7 @@
 package com.enhancedmessaging.presentation;
 
 import com.enhancedmessaging.application.AvatarService;
+import com.enhancedmessaging.application.BossIconService;
 import com.enhancedmessaging.application.ConversationService;
 import com.enhancedmessaging.application.FriendStatusService;
 import com.enhancedmessaging.domain.Conversation;
@@ -168,7 +169,7 @@ public class EnhancedMessagingPanel extends PluginPanel
 		JPanel footer = new JPanel(new GridLayout(0, 1, 0, 4));
 		footer.setOpaque(false);
 		storageStatus.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
-		storageStatus.setFont(FontManager.getDefaultFont());
+		storageStatus.setFont(FontManager.getDefaultFont().deriveFont(12f));
 		storageStatus.putClientProperty("html.disable", true);
 		footer.add(storageStatus);
 		deleteHistory.setEnabled(false);
@@ -198,6 +199,13 @@ public class EnhancedMessagingPanel extends PluginPanel
 	public void setReadChanged(Runnable readChanged)
 	{
 		this.readChanged = readChanged;
+	}
+
+	public void setBossIcons(BossIconService icons) { transcript.setBossIcons(icons); }
+
+	public void refreshBossIcons()
+	{
+		if (!closed) { transcript.refreshBossIcons(); }
 	}
 
 	public void selectConversation(String player)

@@ -121,6 +121,16 @@ public class HistoryCoordinator
 			return;
 		}
 		conversations.record(message);
+		messagesChanged();
+	}
+
+	public void updateMessage(PrivateMessage message)
+	{
+		if (!closed && conversations.updateMessage(message)) { messagesChanged(); }
+	}
+
+	private void messagesChanged()
+	{
 		if (retentionEnabled)
 		{
 			dirty = true;

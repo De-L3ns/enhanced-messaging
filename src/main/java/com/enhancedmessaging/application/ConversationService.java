@@ -51,6 +51,12 @@ public class ConversationService
 		return conversations.get(latestIncomingKey);
 	}
 
+	public boolean updateMessage(PrivateMessage message)
+	{
+		Conversation conversation = conversations.get(message.getPlayerName().toLowerCase(Locale.ROOT));
+		return conversation != null && conversation.updateText(message.getId(), message.getText());
+	}
+
 	public List<Conversation> getConversations()
 	{
 		List<Conversation> result = new ArrayList<>(conversations.values());
@@ -82,6 +88,8 @@ public class ConversationService
 	public void mergeSavedHistory(List<PrivateMessage> saved)
 	{
 		List<PrivateMessage> current = snapshot();
+		Map<String, PrivateMessage> currentById = new LinkedHashMap<>();
+		current.forEach(message -> currentById.put(message.getId(), message));
 		String latestIncoming = latestIncomingKey;
 		Set<String> unread = new HashSet<>();
 		conversations.forEach((key, conversation) ->
@@ -97,7 +105,7 @@ public class ConversationService
 		{
 			if (seen.add(message.getId()))
 			{
-				record(message, false);
+				record(currentById.getOrDefault(message.getId(), message), false);
 			}
 		}
 		for (PrivateMessage message : current)

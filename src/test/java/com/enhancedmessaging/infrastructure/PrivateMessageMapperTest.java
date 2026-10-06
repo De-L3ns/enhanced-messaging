@@ -55,6 +55,21 @@ public class PrivateMessageMapperTest
 	}
 
 	@Test
+	public void capturesFormattedCommandsWhenRuneLiteHasAlreadyResolvedThem()
+	{
+		TestMessageNode node = new TestMessageNode(1, ChatMessageType.PRIVATECHAT, "!kc zulrah");
+		node.setRuneLiteFormatMessage("<colNORMAL>Zulrah: <colHIGHLIGHT>42<colNORMAL> killed");
+		ChatMessage event = event(ChatMessageType.PRIVATECHAT, "Alice", "!kc zulrah", 100);
+		event.setMessageNode(node);
+		assertEquals("Zulrah: 42 killed", PrivateMessageMapper.fromEvent(event).getText());
+		node.setRuneLiteFormatMessage(null);
+		node.setValue("Zulrah: 43 killed");
+		assertEquals("Zulrah: 43 killed", PrivateMessageMapper.fromEvent(event).getText());
+		node.setValue(null);
+		assertEquals("!kc zulrah", PrivateMessageMapper.fromEvent(event).getText());
+	}
+
+	@Test
 	public void usesCaptureTimeIfTheEventHasNoTimestamp()
 	{
 		Instant before = Instant.now();

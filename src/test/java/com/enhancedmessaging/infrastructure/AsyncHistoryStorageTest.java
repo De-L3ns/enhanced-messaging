@@ -51,6 +51,12 @@ public class AsyncHistoryStorageTest
 		storage.save("a", List.of(saved, fresh), true);
 		executor.runAll();
 		assertEquals(List.of(saved, fresh), repository.histories.get("a"));
+		PrivateMessage resolved = new PrivateMessage(saved.getId(), saved.getPlayerName(), "Resolved command text",
+			saved.getTimestamp(), saved.isOutgoing());
+		storage.save("a", List.of(resolved, fresh), true);
+		executor.runAll();
+		assertEquals("An older file must not overwrite resolved text during a final merged save",
+			List.of(resolved, fresh), repository.histories.get("a"));
 	}
 
 	@Test
