@@ -4,7 +4,7 @@ import com.enhancedmessaging.application.WidgetOptions;
 import com.enhancedmessaging.application.WidgetView;
 import com.enhancedmessaging.domain.FriendStatus;
 import com.enhancedmessaging.domain.PrivateMessage;
-import com.enhancedmessaging.domain.WidgetChatMode;
+import com.enhancedmessaging.domain.WidgetUnreadStyle;
 import java.awt.Dimension;
 import java.awt.Graphics2D;
 import java.awt.Point;
@@ -31,9 +31,9 @@ public class MessageWidgetOverlayTest
 	private final JPanel eventSource = new JPanel();
 
 	@Test
-	public void rowAndPinClicksHaveSeparateActionsAndDoNotReachTheGame()
+	public void rowClicksDoNotReachTheGame()
 	{
-		publish(true, true);
+		publish(true);
 		MouseEvent down = event(MouseEvent.MOUSE_PRESSED, 75, 110, 0);
 		mouse.mousePressed(down);
 		assertTrue(down.isConsumed());
@@ -44,32 +44,30 @@ public class MessageWidgetOverlayTest
 		mouse.mouseClicked(clicked);
 		assertTrue(clicked.isConsumed());
 		assertEquals("Alice", actions.get(0).getPlayer());
-		assertFalse(actions.get(0).isPin());
 		mouse.mousePressed(event(MouseEvent.MOUSE_PRESSED, 267, 85, 0));
 		mouse.mouseReleased(event(MouseEvent.MOUSE_RELEASED, 267, 85, 0));
-		assertTrue(actions.get(1).isPin());
 		assertEquals(7, actions.get(1).getContextToken());
 	}
 
 	@Test
-	public void passiveRowsStillAllowPinsButNotBlankSpaceOrOverlayDragGestures()
+	public void passiveRowsAndBlankSpaceDoNotConsumeClicksAndOverlayDragGesturesArePreserved()
 	{
-		publish(false, true);
+		publish(false);
 		assertNull(overlay.actionAt(new Point(75, 110)));
-		assertNotNull(overlay.actionAt(new Point(267, 85)));
+		assertNull(overlay.actionAt(new Point(267, 85)));
 		assertNull(overlay.actionAt(new Point(51, 61)));
 		MouseEvent drag = event(MouseEvent.MOUSE_PRESSED, 267, 85, InputEvent.ALT_DOWN_MASK);
 		mouse.mousePressed(drag);
 		assertFalse(drag.isConsumed());
-		publish(true, false);
-		assertNull(overlay.actionAt(new Point(267, 85)));
+		publish(true);
+		assertNotNull(overlay.actionAt(new Point(267, 85)));
 		assertNotNull(overlay.actionAt(new Point(75, 110)));
 	}
 
 	@Test
 	public void leavingTheRowOrHidingTheWidgetCancelsTheAction()
 	{
-		publish(true, true);
+		publish(true);
 		mouse.mousePressed(event(MouseEvent.MOUSE_PRESSED, 75, 110, 0));
 		MouseEvent outside = event(MouseEvent.MOUSE_RELEASED, 500, 400, 0);
 		mouse.mouseReleased(outside);
@@ -79,24 +77,24 @@ public class MessageWidgetOverlayTest
 		overlay.publish(null);
 		mouse.mouseReleased(event(MouseEvent.MOUSE_RELEASED, 75, 110, 0));
 		assertTrue(actions.isEmpty());
-		publish(true, true);
+		publish(true);
 		visible.set(false);
 		assertNull(render(overlay));
 		assertNull(overlay.actionAt(new Point(75, 110)));
 	}
 
 	@Test
-	public void changingThePlayerAccountOrActionBeforeReleaseCancelsTheClick()
+	public void changingThePlayerOrAccountBeforeReleaseCancelsTheClick()
 	{
-		for (int change = 0; change < 3; change++)
+		for (int change = 0; change < 2; change++)
 		{
-			publish(true, true);
+			publish(true);
 			mouse.mousePressed(event(MouseEvent.MOUSE_PRESSED, 75, 110, 0));
-			WidgetView.Chat chat = new WidgetView.Chat(change == 0 ? "Bob" : "Alice", false, true,
+			WidgetView.Chat chat = new WidgetView.Chat(change == 0 ? "Bob" : "Alice", true,
 				FriendStatus.ONLINE, null, List.of(message()));
-			overlay.publish(new WidgetView(options(true), List.of(chat), change == 1 ? 8 : 7, true, ""));
+			overlay.publish(new WidgetView(options(true), List.of(chat), change == 1 ? 8 : 7));
 			render(overlay);
-			mouse.mouseReleased(event(MouseEvent.MOUSE_RELEASED, change == 2 ? 267 : 75, change == 2 ? 85 : 110, 0));
+			mouse.mouseReleased(event(MouseEvent.MOUSE_RELEASED, 75, 110, 0));
 			assertTrue(actions.isEmpty());
 		}
 	}
@@ -108,10 +106,10 @@ public class MessageWidgetOverlayTest
 		List<WidgetView.Chat> rows = new ArrayList<>();
 		for (int i = 0; i < 10; i++)
 		{
-			rows.add(new WidgetView.Chat("Player " + i, false, true, FriendStatus.ONLINE, null,
+			rows.add(new WidgetView.Chat("Player " + i, true, FriendStatus.ONLINE, null,
 				List.of(message(), message(), message())));
 		}
-		small.publish(new WidgetView(options(true), rows, 7, true, ""));
+		small.publish(new WidgetView(options(true), rows, 7));
 		small.setBounds(new Rectangle(0, 0, 240, 0));
 		Dimension size = render(small);
 		assertTrue(size.height <= 230);
@@ -120,11 +118,11 @@ public class MessageWidgetOverlayTest
 	}
 
 	@Test
-	public void nativeResizeReflowsPreviewsUpdatesPinBoundsAndResetRestoresConfiguredWidth() throws Exception
+	public void nativeResizeReflowsPreviewsUpdatesRowBoundsAndResetRestoresDefaultWidth() throws Exception
 	{
 		SwingUtilities.invokeAndWait(() ->
 		{
-			publish(true, true);
+			publish(true);
 			assertTrue(overlay.isResizable());
 			// The first chat starts immediately below the padding, with no title area.
 			assertNotNull(overlay.actionAt(new Point(75, 75)));
@@ -136,14 +134,14 @@ public class MessageWidgetOverlayTest
 			assertEquals(new Dimension(360, 180), size);
 			overlay.getBounds().setSize(size);
 			assertNotNull(overlay.actionAt(new Point(387, 85)));
-			assertTrue(overlay.actionAt(new Point(387, 85)).isPin());
-			assertFalse(overlay.actionAt(new Point(267, 85)).isPin());
+			assertEquals("Alice", overlay.actionAt(new Point(387, 85)).getPlayer());
+			assertNotNull(overlay.actionAt(new Point(267, 85)));
 			overlay.setPreferredSize(null);
 		});
 		SwingUtilities.invokeAndWait(() ->
 		{
 			assertEquals(240, render(overlay).width);
-			assertTrue(overlay.actionAt(new Point(267, 85)).isPin());
+			assertNotNull(overlay.actionAt(new Point(267, 85)));
 		});
 	}
 
@@ -153,9 +151,9 @@ public class MessageWidgetOverlayTest
 		SwingUtilities.invokeAndWait(() ->
 		{
 			List<WidgetView.Chat> rows = List.of(
-				new WidgetView.Chat("Alice", false, true, FriendStatus.ONLINE, null, List.of(message())),
-				new WidgetView.Chat("Bob", false, true, FriendStatus.OFFLINE, null, List.of(message())));
-			overlay.publish(new WidgetView(options(true), rows, 7, true, ""));
+				new WidgetView.Chat("Alice", true, FriendStatus.ONLINE, null, List.of(message())),
+				new WidgetView.Chat("Bob", true, FriendStatus.OFFLINE, null, List.of(message())));
+			overlay.publish(new WidgetView(options(true), rows, 7));
 			overlay.setBounds(new Rectangle(0, 0, 240, 0));
 			overlay.setPreferredSize(new Dimension(240, 110));
 		});
@@ -183,8 +181,8 @@ public class MessageWidgetOverlayTest
 		SwingUtilities.invokeAndWait(() ->
 		{
 			// A two-line preview ends at y=76; the remaining eight pixels are padding.
-			overlay.publish(new WidgetView(options(true), List.of(new WidgetView.Chat("Alice", false, true,
-				FriendStatus.ONLINE, null, List.of(message()))), 7, true, ""));
+			overlay.publish(new WidgetView(options(true), List.of(new WidgetView.Chat("Alice", true,
+				FriendStatus.ONLINE, null, List.of(message()))), 7));
 			overlay.setBounds(new Rectangle(0, 0, 240, 0));
 			assertEquals(84, render(overlay).height);
 			overlay.setPreferredSize(new Dimension(240, 76));
@@ -207,8 +205,8 @@ public class MessageWidgetOverlayTest
 		SwingUtilities.invokeAndWait(() ->
 		{
 			overlay.publish(new WidgetView(options(true), List.of(
-				new WidgetView.Chat("Alice", false, true, FriendStatus.ONLINE, null, List.of(message())),
-				new WidgetView.Chat("Bob", false, true, FriendStatus.OFFLINE, null, List.of(message()))), 7, true, ""));
+				new WidgetView.Chat("Alice", true, FriendStatus.ONLINE, null, List.of(message())),
+				new WidgetView.Chat("Bob", true, FriendStatus.OFFLINE, null, List.of(message()))), 7));
 			overlay.setBounds(new Rectangle(0, 0, 240, 0));
 			overlay.setPreferredSize(new Dimension(240, 90));
 		});
@@ -222,6 +220,210 @@ public class MessageWidgetOverlayTest
 			assertEquals("No partial second chat should remain visible",
 				0, image.getRGB(10, 83));
 		});
+	}
+
+	@Test
+	public void compactModeDrawsOnlyAvatarsAndUnreadBadges() throws Exception
+	{
+		SwingUtilities.invokeAndWait(() ->
+		{
+			overlay.publish(new WidgetView(compactOptions(true, true), List.of(
+				new WidgetView.Chat("Alice", true, FriendStatus.ONLINE, null, List.of(message())),
+				new WidgetView.Chat("Bob", false, FriendStatus.OFFLINE, null, List.of(message()))), 7));
+			overlay.setBounds(new Rectangle(0, 0, 76, 0));
+			BufferedImage image = new BufferedImage(76, 80, BufferedImage.TYPE_INT_ARGB);
+			Graphics2D graphics = image.createGraphics();
+			try { assertEquals(new Dimension(76, 80), overlay.render(graphics)); } finally { graphics.dispose(); }
+			assertTrue(overlay.isResizable());
+			assertTrue(overlay.isMovable());
+			assertNotEquals(0, image.getRGB(16, 16));
+			assertNotEquals("Unread chats display a New pill", 0, image.getRGB(36, 18));
+			assertEquals("Read chats have no pill or name", 0, image.getRGB(36, 54));
+			assertEquals("Compact mode has no chat background", 0, image.getRGB(1, 20));
+			assertEquals("Rows stay separated", 0, image.getRGB(16, 38));
+			assertEquals("Alice", overlay.actionAt(new Point(16, 16)).getPlayer());
+			assertEquals("Bob", overlay.actionAt(new Point(16, 54)).getPlayer());
+			assertNull(overlay.actionAt(new Point(16, 38)));
+		});
+	}
+
+	@Test
+	public void compactUnreadCanBeClearedAndClicksCanBeDisabled() throws Exception
+	{
+		SwingUtilities.invokeAndWait(() ->
+		{
+			overlay.setBounds(new Rectangle(0, 0, 76, 44));
+			for (boolean unread : List.of(true, false))
+			{
+				overlay.publish(new WidgetView(compactOptions(true, true), List.of(
+					new WidgetView.Chat("Alice", unread, FriendStatus.ONLINE, null, List.of())), 7));
+				BufferedImage image = new BufferedImage(76, 44, BufferedImage.TYPE_INT_ARGB);
+				Graphics2D graphics = image.createGraphics();
+				try { overlay.render(graphics); } finally { graphics.dispose(); }
+				assertEquals(unread, image.getRGB(36, 18) != 0);
+			}
+			overlay.publish(new WidgetView(compactOptions(true, false), List.of(
+				new WidgetView.Chat("Alice", true, FriendStatus.ONLINE, null, List.of())), 7));
+			BufferedImage badgeHidden = new BufferedImage(76, 44, BufferedImage.TYPE_INT_ARGB);
+			Graphics2D graphics = badgeHidden.createGraphics();
+			try { overlay.render(graphics); } finally { graphics.dispose(); }
+			assertEquals("Show New indicator still applies in compact mode", 0, badgeHidden.getRGB(36, 18));
+			overlay.publish(new WidgetView(compactOptions(false, true), List.of(
+				new WidgetView.Chat("Alice", true, FriendStatus.ONLINE, null, List.of())), 7));
+			render(overlay);
+			MouseEvent click = event(MouseEvent.MOUSE_PRESSED, 16, 16, 0);
+			mouse.mousePressed(click);
+			assertFalse(click.isConsumed());
+			assertNull(overlay.actionAt(new Point(16, 16)));
+		});
+	}
+
+	@Test
+	public void emptyCompactModeHidesAndSwitchingBackRestoresRegularRows() throws Exception
+	{
+		SwingUtilities.invokeAndWait(() ->
+		{
+			overlay.publish(new WidgetView(compactOptions(true, true), List.of(), 7));
+			assertNull(render(overlay));
+			overlay.publish(new WidgetView(compactOptions(true, true), List.of(
+				new WidgetView.Chat("Alice", true, FriendStatus.ONLINE, null, List.of())), 7));
+			assertEquals(76, render(overlay).width);
+			publish(true);
+			assertTrue(overlay.isResizable());
+			assertEquals(240, render(overlay).width);
+			assertNotNull(overlay.actionAt(new Point(75, 110)));
+		});
+	}
+
+	private WidgetOptions compactOptions(boolean click, boolean unread)
+	{
+		return new WidgetOptions(true, 10, 3, true, false, true, unread, WidgetUnreadStyle.PILL, click);
+	}
+
+	@Test
+	public void resizingCompactGridReflowsFourChatsAndUpdatesEveryClickTarget() throws Exception
+	{
+		SwingUtilities.invokeAndWait(() ->
+		{
+			overlay.publish(new WidgetView(compactOptions(true, true), fourChats(), 7));
+			overlay.setBounds(new Rectangle(0, 0, 76, 152));
+			overlay.setPreferredSize(new Dimension(148, 80));
+		});
+		SwingUtilities.invokeAndWait(() ->
+		{
+			assertEquals(new Dimension(148, 80), render(overlay));
+			assertEquals("Alice", overlay.actionAt(new Point(20, 20)).getPlayer());
+			assertEquals("Bob", overlay.actionAt(new Point(92, 20)).getPlayer());
+			assertEquals("Carol", overlay.actionAt(new Point(20, 56)).getPlayer());
+			assertEquals("Dave", overlay.actionAt(new Point(92, 56)).getPlayer());
+			assertNull(overlay.actionAt(new Point(74, 20)));
+			assertNull(overlay.actionAt(new Point(20, 38)));
+			overlay.setPreferredSize(new Dimension(292, 44));
+		});
+		SwingUtilities.invokeAndWait(() ->
+		{
+			assertEquals(new Dimension(292, 44), render(overlay));
+			for (int i = 0; i < fourChats().size(); i++)
+			{
+				assertEquals(fourChats().get(i).getPlayer(), overlay.actionAt(new Point(20 + i * 72, 20)).getPlayer());
+			}
+			mouse.mousePressed(event(MouseEvent.MOUSE_PRESSED, 236, 20, 0));
+			mouse.mouseReleased(event(MouseEvent.MOUSE_RELEASED, 236, 20, 0));
+			assertEquals("Dave", actions.get(0).getPlayer());
+			overlay.setPreferredSize(new Dimension(76, 152));
+		});
+		SwingUtilities.invokeAndWait(() ->
+		{
+			assertEquals(new Dimension(76, 152), render(overlay));
+			assertEquals("Dave", overlay.actionAt(new Point(20, 128)).getPlayer());
+		});
+	}
+
+	@Test
+	public void shortCompactGridHidesWholeRowsWithoutClickableInvisibleChats() throws Exception
+	{
+		SwingUtilities.invokeAndWait(() ->
+		{
+			overlay.publish(new WidgetView(compactOptions(true, true), fourChats(), 7));
+			overlay.setBounds(new Rectangle(0, 0, 148, 40));
+			overlay.setPreferredSize(new Dimension(148, 40));
+		});
+		SwingUtilities.invokeAndWait(() ->
+		{
+			assertEquals(new Dimension(148, 40), render(overlay));
+			assertEquals("Bob", overlay.actionAt(new Point(92, 20)).getPlayer());
+			assertNull(overlay.actionAt(new Point(20, 56)));
+			assertNull(overlay.actionAt(new Point(92, 56)));
+		});
+	}
+
+	@Test
+	public void glowUsesSmallerCellsAndRestoresSavedCompactSize() throws Exception
+	{
+		SwingUtilities.invokeAndWait(() ->
+		{
+			// RuneLite restores size before the first account snapshot is published.
+			overlay.setPreferredSize(new Dimension(76, 80));
+			overlay.publish(new WidgetView(glowOptions(true, true), fourChats(), 7));
+			overlay.setBounds(new Rectangle(0, 0, 76, 80));
+		});
+		SwingUtilities.invokeAndWait(() ->
+		{
+			assertEquals(new Dimension(76, 80), render(overlay));
+			assertEquals("Bob", overlay.actionAt(new Point(56, 20)).getPlayer());
+			assertEquals("Dave", overlay.actionAt(new Point(56, 56)).getPlayer());
+			overlay.setPreferredSize(new Dimension(148, 44));
+		});
+		SwingUtilities.invokeAndWait(() ->
+		{
+			assertEquals(new Dimension(148, 44), render(overlay));
+			assertEquals("Dave", overlay.actionAt(new Point(128, 20)).getPlayer());
+		});
+	}
+
+	@Test
+	public void glowingAvatarsReplacePillsAndClearOnReadInBothLayouts() throws Exception
+	{
+		SwingUtilities.invokeAndWait(() ->
+		{
+			for (boolean compact : List.of(true, false))
+			{
+				int haloX = compact ? 5 : 11;
+				int haloY = compact ? 20 : 26;
+				for (boolean unread : List.of(true, false))
+				{
+					overlay.publish(new WidgetView(glowOptions(compact, true), List.of(
+						new WidgetView.Chat("Alice", unread, FriendStatus.UNKNOWN, null, List.of())), 7));
+					BufferedImage image = new BufferedImage(240, 100, BufferedImage.TYPE_INT_ARGB);
+					Graphics2D graphics = image.createGraphics();
+					try { overlay.render(graphics); } finally { graphics.dispose(); }
+					int plain = compact ? 0 : net.runelite.client.ui.ColorScheme.MEDIUM_GRAY_COLOR.getRGB();
+					assertEquals(unread, image.getRGB(haloX, haloY) != plain);
+					assertEquals("Glow must not draw a New pill", plain, image.getRGB(compact ? 36 : 210, 20));
+				}
+			}
+			overlay.publish(new WidgetView(glowOptions(true, false), List.of(
+				new WidgetView.Chat("Alice", true, FriendStatus.UNKNOWN, null, List.of())), 7));
+			BufferedImage disabled = new BufferedImage(40, 44, BufferedImage.TYPE_INT_ARGB);
+			Graphics2D graphics = disabled.createGraphics();
+			try { overlay.render(graphics); } finally { graphics.dispose(); }
+			assertEquals("Show New indicator disables glow too", 0, disabled.getRGB(5, 20));
+		});
+	}
+
+	private WidgetOptions glowOptions(boolean compact, boolean unread)
+	{
+		return new WidgetOptions(true, 4, 0, compact, false, false, unread, WidgetUnreadStyle.GLOW, true);
+	}
+
+	private List<WidgetView.Chat> fourChats()
+	{
+		List<WidgetView.Chat> chats = new ArrayList<>();
+		for (String player : List.of("Alice", "Bob", "Carol", "Dave"))
+		{
+			chats.add(new WidgetView.Chat(player, true, FriendStatus.UNKNOWN, null, List.of()));
+		}
+		return chats;
 	}
 
 	@Test
@@ -246,17 +448,17 @@ public class MessageWidgetOverlayTest
 		finally { g.dispose(); }
 	}
 
-	private void publish(boolean clickToOpen, boolean canPin)
+	private void publish(boolean clickToOpen)
 	{
-		overlay.publish(new WidgetView(options(clickToOpen), List.of(new WidgetView.Chat("Alice", false, true,
-			FriendStatus.ONLINE, null, List.of(message()))), 7, canPin, ""));
+		overlay.publish(new WidgetView(options(clickToOpen), List.of(new WidgetView.Chat("Alice", true,
+			FriendStatus.ONLINE, null, List.of(message()))), 7));
 		overlay.setBounds(new Rectangle(50, 60, 240, 0));
 		Dimension size = render(overlay);
 		overlay.getBounds().setSize(size);
 	}
 	private WidgetOptions options(boolean click)
 	{
-		return new WidgetOptions(true, 10, 3, WidgetChatMode.PINNED_AND_RECENT, true, true, true, 240, click);
+		return new WidgetOptions(true, 10, 3, false, true, true, true, WidgetUnreadStyle.PILL, click);
 	}
 	private PrivateMessage message()
 	{

@@ -2,7 +2,7 @@ package com.enhancedmessaging;
 
 import com.enhancedmessaging.application.ConversationService;
 import com.enhancedmessaging.domain.Conversation;
-import com.enhancedmessaging.domain.WidgetChatMode;
+import com.enhancedmessaging.domain.WidgetUnreadStyle;
 import net.runelite.client.config.Config;
 import net.runelite.client.config.ConfigGroup;
 import net.runelite.client.config.ConfigItem;
@@ -46,41 +46,40 @@ public interface EnhancedMessagingConfig extends Config
 	String widgetSection = "widget";
 
 	@ConfigItem(keyName = "widgetEnabled", name = "Enable widget", section = widgetSection, position = 0,
-		description = "Show the movable message widget. Pins are saved locally per character, independently of message retention.")
+		description = "Show the movable message widget in the game window.")
 	default boolean widgetEnabled() { return false; }
 
-	@Range(min = 1, max = 10)
-	@ConfigItem(keyName = "widgetChatCount", name = "Visible chats", section = widgetSection, position = 1,
-		description = "Maximum chats to show, including pins. Extra pins stay saved and can be unpinned from the sidebar.")
-	default int widgetChatCount() { return 3; }
+	@ConfigItem(keyName = "widgetLowFootprint", name = "Low footprint", section = widgetSection, position = 1,
+		description = "Show only avatars and unread indicators in a resizable grid. Widen for more columns, narrow for more rows. Switching modes resets the dragged size.")
+	default boolean widgetLowFootprint() { return false; }
 
-	@ConfigItem(keyName = "widgetChatMode", name = "Chat selection", section = widgetSection, position = 2,
-		description = "The latest live message sender comes first. Fill remaining slots with pins and recent chats, or pins only.")
-	default WidgetChatMode widgetChatMode() { return WidgetChatMode.PINNED_AND_RECENT; }
+	@Range(min = 1, max = 10)
+	@ConfigItem(keyName = "widgetChatCount", name = "Visible chats", section = widgetSection, position = 2,
+		description = "Maximum recent chats to show. The latest incoming message sender always comes first.")
+	default int widgetChatCount() { return 3; }
 
 	@Range(min = 0, max = 3)
 	@ConfigItem(keyName = "widgetPreviewCount", name = "Messages per chat", section = widgetSection, position = 3,
-		description = "Show the latest 0 to 3 messages per chat. Previews do not mark messages read.")
+		description = "Show the latest 0 to 3 messages per chat in the regular widget. Previews do not mark messages read.")
 	default int widgetPreviewCount() { return 1; }
 
 	@ConfigItem(keyName = "widgetAvatars", name = "Show avatars", section = widgetSection, position = 4,
-		description = "Show each chat's local avatar.")
+		description = "Show each chat's local avatar. Low footprint always shows avatars.")
 	default boolean widgetAvatars() { return true; }
 
 	@ConfigItem(keyName = "widgetStatus", name = "Show friend status", section = widgetSection, position = 5,
-		description = "Show online/offline orbs for players on your friend list.")
+		description = "Show online/offline orbs in the regular widget for players on your friend list.")
 	default boolean widgetStatus() { return true; }
 
 	@ConfigItem(keyName = "widgetUnread", name = "Show New indicator", section = widgetSection, position = 6,
-		description = "Show the New pill for unread conversations.")
+		description = "Show the selected unread indicator for new conversations.")
 	default boolean widgetUnread() { return true; }
 
-	@Range(min = 180, max = 360)
-	@ConfigItem(keyName = "widgetWidth", name = "Widget width", section = widgetSection, position = 7,
-		description = "Default width in pixels. Changing this resets the dragged size. Hold RuneLite's overlay drag hotkey and drag an edge to resize.")
-	default int widgetWidth() { return 240; }
+	@ConfigItem(keyName = "widgetUnreadStyle", name = "Unread indicator style", section = widgetSection, position = 7,
+		description = "Choose a New pill or a glow around unread avatars in either widget layout. Glow shows avatars while unread indicators are enabled.")
+	default WidgetUnreadStyle widgetUnreadStyle() { return WidgetUnreadStyle.PILL; }
 
 	@ConfigItem(keyName = "widgetClickToOpen", name = "Click opens sidebar", section = widgetSection, position = 8,
-		description = "Click a widget chat to open its sidebar conversation. Pin controls work independently.")
+		description = "Click a widget chat or compact avatar to open its sidebar conversation.")
 	default boolean widgetClickToOpen() { return true; }
 }

@@ -2,8 +2,6 @@ package com.enhancedmessaging.presentation;
 
 import com.enhancedmessaging.application.ConversationService;
 import com.enhancedmessaging.application.FriendStatusService;
-import com.enhancedmessaging.application.PinService;
-import com.enhancedmessaging.application.PinStorage;
 import com.enhancedmessaging.domain.Conversation;
 import com.enhancedmessaging.domain.PrivateMessage;
 import com.enhancedmessaging.domain.FriendStatus;
@@ -12,7 +10,6 @@ import java.awt.Container;
 import java.time.Instant;
 import java.util.Map;
 import java.util.List;
-import java.util.concurrent.CompletableFuture;
 import javax.swing.JComponent;
 import javax.swing.JList;
 import javax.swing.JLabel;
@@ -30,39 +27,27 @@ import static org.junit.Assert.assertTrue;
 public class EnhancedMessagingPanelTest
 {
 	@Test
-	public void widgetNavigationSelectsTheExactChatAndEmptyPinsRemainManageable() throws Exception
+	public void widgetNavigationSelectsTheExactChatWithoutChangingHistory() throws Exception
 	{
 		SwingUtilities.invokeAndWait(() ->
 		{
 			ConversationService conversations = new ConversationService();
 			conversations.record(message("Alice", "Hello", false));
 			conversations.record(message("Bob", "Hi", false));
-			PinService pins = new PinService(new PinStorage()
-			{
-				public CompletableFuture<List<String>> load(String account) { return CompletableFuture.completedFuture(List.of("Carol")); }
-				public CompletableFuture<Void> save(String account, List<String> players) { return CompletableFuture.completedFuture(null); }
-			}, Runnable::run, () -> { }, ignored -> { });
-			pins.switchAccount("a");
 			EnhancedMessagingPanel panel = createPanel(conversations);
-			panel.setWidgetActions(pins, () -> { });
+			panel.setReadChanged(() -> { });
 			panel.refresh();
-			assertEquals(3, findConversationList(panel).getModel().getSize());
+			assertEquals(2, findConversationList(panel).getModel().getSize());
 			panel.selectConversation("alice");
 			assertEquals("Alice", ((Conversation) findConversationList(panel).getSelectedValue()).getPlayerName());
 			assertTrue(conversations.getConversations().stream().filter(c -> c.getPlayerName().equals("Alice")).findFirst().get().isUnread());
 			panel.onActivate();
 			assertFalse(conversations.getConversations().stream().filter(c -> c.getPlayerName().equals("Alice")).findFirst().get().isUnread());
-			panel.selectConversation("Carol");
-			assertEquals("Carol", ((Conversation) findConversationList(panel).getSelectedValue()).getPlayerName());
-			assertTrue(transcriptText(findTranscript(panel)).contains("Send or receive"));
-			for (int i = 0; i < ConversationService.MAX_CONVERSATIONS; i++)
-			{
-				conversations.record(message("Player " + i, "Keep this history", false));
-			}
 			List<Conversation> before = conversations.getConversations();
-			panel.selectConversation("Carol");
-			assertEquals("Opening an empty pin must not evict message history", before, conversations.getConversations());
-			assertEquals(ConversationService.MAX_CONVERSATIONS + 1, findConversationList(panel).getModel().getSize());
+			panel.selectConversation("Bob");
+			assertEquals("Bob", ((Conversation) findConversationList(panel).getSelectedValue()).getPlayerName());
+			assertTrue(transcriptText(findTranscript(panel)).contains("Hi"));
+			assertEquals(before, conversations.getConversations());
 			panel.close();
 		});
 	}

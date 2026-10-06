@@ -4,7 +4,6 @@ import com.enhancedmessaging.application.AvatarService;
 import com.enhancedmessaging.application.ConversationService;
 import com.enhancedmessaging.application.FriendStatusService;
 import com.enhancedmessaging.application.HistoryCoordinator;
-import com.enhancedmessaging.application.PinService;
 import com.enhancedmessaging.application.WidgetOptions;
 import com.enhancedmessaging.application.WidgetService;
 import com.enhancedmessaging.domain.PrivateMessage;
@@ -13,7 +12,6 @@ import com.enhancedmessaging.infrastructure.AsyncHistoryStorage;
 import com.enhancedmessaging.infrastructure.FriendStatusReader;
 import com.enhancedmessaging.infrastructure.JsonHistoryRepository;
 import com.enhancedmessaging.infrastructure.LocalAvatarStorage;
-import com.enhancedmessaging.infrastructure.LocalPinStorage;
 import com.enhancedmessaging.infrastructure.PrivateMessageMapper;
 import com.enhancedmessaging.presentation.EnhancedMessagingPanel;
 import com.enhancedmessaging.presentation.MessageWidgetOverlay;
@@ -92,7 +90,6 @@ public class EnhancedMessagingPlugin extends Plugin
 
 	private AsyncHistoryStorage storage;
 	private LocalAvatarStorage avatarStorage;
-	private LocalPinStorage pinStorage;
 	private volatile Session activeSession;
 
 	@Provides
@@ -109,7 +106,6 @@ public class EnhancedMessagingPlugin extends Plugin
 			storage = new AsyncHistoryStorage(new JsonHistoryRepository(this::getPluginDirectory, gson),
 				httpClient.dispatcher().executorService());
 			avatarStorage = new LocalAvatarStorage(this::getPluginDirectory, httpClient.dispatcher().executorService());
-			pinStorage = new LocalPinStorage(this::getPluginDirectory, gson, httpClient.dispatcher().executorService());
 		}
 		Session session = new Session();
 		activeSession = session;
@@ -122,14 +118,6 @@ public class EnhancedMessagingPlugin extends Plugin
 			session.widget = new MessageWidgetOverlay(this,
 				() -> activeSession == session && !session.closed && client.getGameState() == GameState.LOGGED_IN,
 				() -> !client.isMenuOpen() && !client.isWidgetSelected(), client::getCanvasHeight);
-			session.pins = new PinService(pinStorage, SwingUtilities::invokeLater,
-				() -> refreshConversations(session), message ->
-				{
-					if (activeSession == session)
-					{
-						JOptionPane.showMessageDialog(session.panel, message, "Widget pins", JOptionPane.ERROR_MESSAGE);
-					}
-				});
 			session.avatars = new AvatarService(avatarStorage, SwingUtilities::invokeLater, () ->
 			{
 				if (session.panel != null)
@@ -146,8 +134,8 @@ public class EnhancedMessagingPlugin extends Plugin
 			});
 			session.panel = new EnhancedMessagingPanel(session.conversations, session.avatars, session.friends,
 				() -> session.history.deleteHistory());
-			session.widgetService = new WidgetService(session.conversations, session.pins, session.avatars, session.friends);
-			session.panel.setWidgetActions(session.pins, () -> refreshWidget(session));
+			session.widgetService = new WidgetService(session.conversations, session.avatars, session.friends);
+			session.panel.setReadChanged(() -> refreshWidget(session));
 			session.history = new HistoryCoordinator(session.conversations, storage, scheduler,
 				SwingUtilities::invokeLater, () ->
 				{
@@ -168,12 +156,7 @@ public class EnhancedMessagingPlugin extends Plugin
 			session.widgetMouse = new MessageWidgetMouseListener(session.widget, action ->
 				queue(session, current ->
 				{
-					if (!current.pins.isCurrent(action.getContextToken())) { return; }
-					if (action.isPin())
-					{
-						current.pins.toggle(action.getPlayer());
-					}
-					else if (config.widgetClickToOpen() && config.widgetEnabled())
+					if (current.widgetService.isCurrent(action.getContextToken()) && config.widgetClickToOpen() && config.widgetEnabled())
 					{
 						current.panel.selectConversation(action.getPlayer());
 						clientToolbar.openPanel(current.navigationButton);
@@ -293,7 +276,7 @@ public class EnhancedMessagingPlugin extends Plugin
 		{
 			queue(activeSession, current ->
 			{
-				if ("widgetWidth".equals(event.getKey()))
+				if ("widgetLowFootprint".equals(event.getKey()))
 				{
 					current.widget.setPreferredSize(null);
 					overlayManager.saveOverlay(current.widget);
@@ -329,7 +312,7 @@ public class EnhancedMessagingPlugin extends Plugin
 					closeSession(session);
 				}
 			}, SwingUtilities::invokeLater).thenCompose(ignored ->
-				CompletableFuture.allOf(storage.drain(), avatarStorage.drain(), pinStorage.drain())));
+				CompletableFuture.allOf(storage.drain(), avatarStorage.drain())));
 		}
 	}
 
@@ -389,7 +372,7 @@ public class EnhancedMessagingPlugin extends Plugin
 		session.avatars.switchAccount(account);
 		session.friends.switchAccount(account);
 		session.history.switchAccount(account);
-		session.pins.switchAccount(account);
+		session.widgetService.switchAccount(account);
 		session.updatingAccount = false;
 		if (changed) { session.panel.refresh(); }
 		session.panel.refreshAvatars();
@@ -414,8 +397,8 @@ public class EnhancedMessagingPlugin extends Plugin
 			return;
 		}
 		WidgetOptions options = new WidgetOptions(config.widgetEnabled(), config.widgetChatCount(), config.widgetPreviewCount(),
-			config.widgetChatMode(), config.widgetAvatars(), config.widgetStatus(), config.widgetUnread(),
-			config.widgetWidth(), config.widgetClickToOpen());
+			config.widgetLowFootprint(), config.widgetAvatars(), config.widgetStatus(), config.widgetUnread(), config.widgetUnreadStyle(),
+			config.widgetClickToOpen());
 		session.widget.publish(session.widgetService.snapshot(options));
 	}
 
@@ -426,7 +409,6 @@ public class EnhancedMessagingPlugin extends Plugin
 		session.widget.publish(null);
 		mouseManager.unregisterMouseListener(session.widgetMouse);
 		overlayManager.remove(session.widget);
-		session.pins.close();
 		session.panel.close();
 		session.avatars.close();
 		session.friends.close();
@@ -454,7 +436,6 @@ public class EnhancedMessagingPlugin extends Plugin
 		private String account;
 		private boolean updatingAccount;
 		private volatile boolean closed;
-		private PinService pins;
 		private WidgetService widgetService;
 		private volatile MessageWidgetOverlay widget;
 		private MessageWidgetMouseListener widgetMouse;

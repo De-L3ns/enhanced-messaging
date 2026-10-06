@@ -46,7 +46,7 @@ public class MessageWidgetMouseListener extends MouseAdapter
 			MessageWidgetOverlay.Action released = overlay.actionAt(event.getPoint());
 			boolean accepted = !event.isConsumed() && target.getBounds().contains(event.getPoint())
 				&& released != null && target.getPlayer().equals(released.getPlayer())
-				&& target.isPin() == released.isPin() && target.getContextToken() == released.getContextToken();
+				&& target.getContextToken() == released.getContextToken();
 			event.consume();
 			if (accepted) { action.accept(target); }
 		}

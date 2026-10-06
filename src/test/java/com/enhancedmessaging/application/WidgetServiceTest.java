@@ -2,12 +2,15 @@ package com.enhancedmessaging.application;
 
 import com.enhancedmessaging.domain.FriendStatus;
 import com.enhancedmessaging.domain.PrivateMessage;
-import com.enhancedmessaging.domain.WidgetChatMode;
+import com.enhancedmessaging.domain.WidgetUnreadStyle;
+import java.awt.image.BufferedImage;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
+import net.runelite.client.util.Filepath;
+import org.junit.Before;
 import org.junit.Test;
 
 import static org.junit.Assert.*;
@@ -16,109 +19,114 @@ public class WidgetServiceTest
 {
 	private final ConversationService conversations = new ConversationService();
 	private final FriendStatusService friends = new FriendStatusService();
-	private final PinService pins = new PinService(new PinStorage()
-	{
-		public CompletableFuture<List<String>> load(String account) { return CompletableFuture.completedFuture(List.of()); }
-		public CompletableFuture<Void> save(String account, List<String> players) { return CompletableFuture.completedFuture(null); }
-	}, Runnable::run, () -> { }, message -> fail(message));
-	private final WidgetService widget = new WidgetService(conversations, pins, null, friends);
+	private final WidgetService widget = new WidgetService(conversations, null, friends);
+
+	@Before
+	public void setUp() { widget.switchAccount("a"); }
 
 	@Test
-	public void latestSenderComesFirstAndRemainingSlotsUsePinsAndRecentActivityWithoutDuplicates()
+	public void latestSenderLeadsRecentActivityWithoutDuplicates()
 	{
-		pins.switchAccount("a");
-		pins.toggle("Alice");
-		pins.toggle("Empty chat");
-		assertEquals(List.of("Alice", "Empty chat"), names(widget.snapshot(options(3, 1, WidgetChatMode.PINNED_AND_RECENT))));
 		record("Alice", "Old", false);
 		record("Bob", "Recent", false);
 		record("Carol", "Newest", false);
-		assertEquals(List.of("Carol", "Alice", "Empty chat"), names(widget.snapshot(options(3, 1, WidgetChatMode.PINNED_AND_RECENT))));
-		assertEquals(List.of("Carol"), names(widget.snapshot(options(1, 1, WidgetChatMode.PINNED_ONLY))));
-		assertEquals(List.of("Carol", "Alice", "Empty chat"), names(widget.snapshot(options(10, 1, WidgetChatMode.PINNED_ONLY))));
-		assertEquals(2, pins.getPlayers().size());
-		record("ALICE", "A newer message from a pinned player", false);
-		assertEquals(List.of("Alice", "Empty chat", "Carol", "Bob"),
-			names(widget.snapshot(options(10, 1, WidgetChatMode.PINNED_AND_RECENT))));
+		record("Alice", "Outgoing elsewhere", true);
+		assertEquals(List.of("Carol", "Alice", "Bob"), names(widget.snapshot(options(3, 1, false))));
+		record("ALICE", "A newer incoming message", false);
+		assertEquals(List.of("Alice", "Carol", "Bob"), names(widget.snapshot(options(10, 1, false))));
 	}
 
 	@Test
-	public void oneChatFollowsTheLatestSenderEvenAheadOfPinsAndOutgoingActivity()
+	public void oneChatFollowsTheLatestSenderInBothLayouts()
 	{
-		pins.switchAccount("a");
-		pins.toggle("Alice");
-		for (WidgetChatMode mode : WidgetChatMode.values())
+		for (boolean compact : List.of(false, true))
 		{
 			record("Alice", "First incoming", false);
-			assertEquals(List.of("Alice"), names(widget.snapshot(options(1, 1, mode))));
 			record("Bob", "New incoming from Bob", false);
-			WidgetView.Chat latest = widget.snapshot(options(1, 1, mode)).getChats().get(0);
+			WidgetView.Chat latest = widget.snapshot(options(1, 1, compact)).getChats().get(0);
 			assertEquals("Bob", latest.getPlayer());
-			assertEquals("New incoming from Bob", latest.getMessages().get(0).getText());
 			assertTrue(latest.isUnread());
-			assertFalse(latest.isPinned());
+			if (!compact) { assertEquals("New incoming from Bob", latest.getMessages().get(0).getText()); }
 			record("Alice", "Outgoing elsewhere", true);
-			assertEquals(List.of("Bob"), names(widget.snapshot(options(1, 1, mode))));
+			assertEquals(List.of("Bob"), names(widget.snapshot(options(1, 1, compact))));
 			conversations.getLatestIncomingConversation().markRead();
-			assertEquals(List.of("Bob"), names(widget.snapshot(options(1, 1, mode))));
-			assertFalse(widget.snapshot(options(1, 1, mode)).getChats().get(0).isUnread());
-			record("ALICE", "Newest incoming", false);
-			assertEquals(List.of("Alice"), names(widget.snapshot(options(1, 1, mode))));
-			assertEquals(List.of("Alice"), pins.getPlayers());
+			assertEquals(List.of("Bob"), names(widget.snapshot(options(1, 1, compact))));
+			assertFalse(widget.snapshot(options(1, 1, compact)).getChats().get(0).isUnread());
 		}
 	}
 
 	@Test
 	public void historyRestoreDoesNotStealLivePriorityAndClearResetsIt()
 	{
-		pins.switchAccount("a");
-		pins.toggle("Alice");
 		PrivateMessage saved = new PrivateMessage("Carol", "Saved incoming", Instant.ofEpochSecond(200), false);
 		conversations.mergeSavedHistory(List.of(saved));
-		assertEquals(List.of("Alice"), names(widget.snapshot(options(1, 1, WidgetChatMode.PINNED_AND_RECENT))));
+		assertEquals(List.of("Carol"), names(widget.snapshot(options(1, 1, false))));
+		assertFalse(widget.snapshot(options(1, 1, false)).getChats().get(0).isUnread());
 		record("Bob", "Live incoming", false);
 		conversations.mergeSavedHistory(List.of(saved));
-		assertEquals(List.of("Bob"), names(widget.snapshot(options(1, 1, WidgetChatMode.PINNED_AND_RECENT))));
+		assertEquals(List.of("Bob"), names(widget.snapshot(options(1, 1, false))));
 		conversations.clear();
 		assertNull(conversations.getLatestIncomingConversation());
-		assertEquals(List.of("Alice"), names(widget.snapshot(options(1, 1, WidgetChatMode.PINNED_AND_RECENT))));
+		assertTrue(widget.snapshot(options(1, 1, false)).getChats().isEmpty());
 	}
 
 	@Test
 	public void previewsAreBoundedChronologicalAndNeverMarkMessagesRead()
 	{
-		pins.switchAccount("a");
 		for (int i = 0; i < 20; i++) { record("Alice", "Message " + i, i % 2 == 0); }
-		WidgetView.Chat chat = widget.snapshot(options(3, 3, WidgetChatMode.PINNED_AND_RECENT)).getChats().get(0);
+		WidgetView.Chat chat = widget.snapshot(options(3, 3, false)).getChats().get(0);
 		assertEquals(List.of("Message 17", "Message 18", "Message 19"), chat.getMessages().stream().map(PrivateMessage::getText).collect(Collectors.toList()));
 		assertTrue(chat.getMessages().get(1).isOutgoing());
 		assertTrue(chat.isUnread());
 		assertTrue(conversations.getConversations().get(0).isUnread());
-		assertTrue(widget.snapshot(options(3, 0, WidgetChatMode.PINNED_AND_RECENT)).getChats().get(0).getMessages().isEmpty());
+		assertTrue(widget.snapshot(options(3, 0, false)).getChats().get(0).getMessages().isEmpty());
 		record("Alice", "Another", false);
-		assertEquals(3, chat.getMessages().size());
 		assertEquals("Message 19", chat.getMessages().get(2).getText());
 	}
 
 	@Test
-	public void emptyPinnedContactsStillShowStatusWithoutAddingHistory()
+	public void accountChangesRejectOldClicksIncludingAfterLoggingBackIntoTheSameAccount()
 	{
-		pins.switchAccount("a");
-		pins.toggle("Alice");
-		friends.switchAccount("a");
-		friends.update("a", Map.of("alice", FriendStatus.ONLINE));
-		WidgetView.Chat chat = widget.snapshot(options(3, 3, WidgetChatMode.PINNED_ONLY)).getChats().get(0);
-		assertEquals(FriendStatus.ONLINE, chat.getStatus());
-		assertFalse(chat.isUnread());
-		assertTrue(chat.getMessages().isEmpty());
-		assertTrue(conversations.isEmpty());
-		pins.switchAccount(null);
-		assertTrue(widget.snapshot(options(3, 3, WidgetChatMode.PINNED_ONLY)).getChats().isEmpty());
+		long token = widget.snapshot(options(1, 1, false)).getContextToken();
+		assertTrue(widget.isCurrent(token));
+		widget.switchAccount("a");
+		assertTrue(widget.isCurrent(token));
+		widget.switchAccount(null);
+		assertFalse(widget.isCurrent(token));
+		widget.switchAccount("a");
+		assertFalse(widget.isCurrent(token));
+		assertTrue(widget.isCurrent(widget.snapshot(options(1, 1, true)).getContextToken()));
 	}
 
-	private WidgetOptions options(int count, int previews, WidgetChatMode mode)
+	@Test
+	public void compactSnapshotsAlwaysLoadAvatarsButOmitPreviews()
 	{
-		return new WidgetOptions(true, count, previews, mode, false, true, true, 240, true);
+		BufferedImage image = new BufferedImage(48, 48, BufferedImage.TYPE_INT_ARGB);
+		AvatarStorage storage = new AvatarStorage()
+		{
+			public CompletableFuture<Map<String, BufferedImage>> stock() { return CompletableFuture.completedFuture(Map.of("default", image)); }
+			public CompletableFuture<BufferedImage> load(String account, String player) { return CompletableFuture.completedFuture(image); }
+			public CompletableFuture<BufferedImage> selectStock(String account, String player, String id) { throw new UnsupportedOperationException(); }
+			public CompletableFuture<BufferedImage> importImage(String account, String player, Filepath file) { throw new UnsupportedOperationException(); }
+			public CompletableFuture<Void> reset(String account, String player) { throw new UnsupportedOperationException(); }
+		};
+		AvatarService avatars = new AvatarService(storage, Runnable::run, () -> { }, message -> fail(message));
+		avatars.switchAccount("a");
+		WidgetService withAvatars = new WidgetService(conversations, avatars, friends);
+		record("Alice", "Private preview text", false);
+		assertNull(withAvatars.snapshot(options(1, 3, false)).getChats().get(0).getAvatar());
+		WidgetView.Chat compact = withAvatars.snapshot(options(1, 3, true)).getChats().get(0);
+		assertSame(image, compact.getAvatar());
+		assertTrue(compact.getMessages().isEmpty());
+		assertTrue(compact.isUnread());
+		WidgetOptions glow = new WidgetOptions(true, 1, 3, false, false, true, true, WidgetUnreadStyle.GLOW, true);
+		assertSame("Glow requires an avatar even when regular avatars are disabled", image,
+			withAvatars.snapshot(glow).getChats().get(0).getAvatar());
+	}
+
+	private WidgetOptions options(int count, int previews, boolean compact)
+	{
+		return new WidgetOptions(true, count, previews, compact, false, true, true, WidgetUnreadStyle.PILL, true);
 	}
 	private List<String> names(WidgetView view)
 	{

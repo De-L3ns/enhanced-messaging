@@ -70,52 +70,61 @@ as `default.png`, `knight.png`, `mage.png`, `ranger.png`, `zuk.png`, and `jad.pn
 optimized 48 × 48 PNG, displayed in a 24-pixel circle. All image reads, imports,
 and writes run in the background; displayed avatars are cached.
 
-Enable **Message widget → Enable widget** in RuneLite's plugin configuration to
-show a movable panel inside the game window. Move it with RuneLite's overlay drag
-hotkey (Alt by default). Hold the same hotkey and drag an edge or corner to resize
-the widget; RuneLite remembers its position and size. Alt + right-click resets
-both. Dragged width stays within 180–360 pixels and height is at least 60 pixels.
-The title and outer background are omitted to leave more room for chats. Each
-chat keeps its own grey box, separated by a five-pixel transparent gap.
-Configuration controls
-width (180–360 pixels), chat count (1–10), recent previews per chat (0–3), avatars,
-friend status, the New pill, and whether clicking a chat opens its sidebar view.
-Defaults are three chats, one preview, and a 240-pixel width. Changing the width
-setting resets the dragged size and restores automatic height. Settings stay in
-RuneLite configuration; the widget contains only chats and pin controls.
+Enable **Message widget > Enable widget** in RuneLite's plugin configuration to
+show a movable panel inside the game window. Hold the overlay drag hotkey (Alt by
+default) to move it, or drag an edge or corner to resize either layout. RuneLite
+remembers position and size. Alt + right-click resets both. In the regular layout,
+width stays within 180-360 pixels and height is at least 60 pixels. Each chat
+keeps its own grey box with transparent gaps; there is no title or outer background.
 
-The latest incoming message's sender always takes the first widget slot, even
-ahead of pins. With **Visible chats** set to one, a message from another player
-replaces the current row with that player's name, previews, and unread indicator.
-Reading the conversation or replying does not displace that sender; the next
-incoming message selects the next sender. Restored history does not count as a
-new incoming message, and logout or clearing history resets this priority.
-Choose **Pinned + recent** to fill the remaining slots with pins in pin order,
-then recent conversations, or **Pinned only** to fill them with just your pins.
-The latest live sender appears in both modes, even when unpinned.
-Right-click a sidebar player to pin/unpin, or click a widget row's diamond:
-filled means pinned, outline means unpinned. Up to 100 pins are supported. The
-visible limit includes pins; extra pins stay saved and can be managed from the
-sidebar, where pinned contacts appear even without messages. Unpinning never
-deletes history and may leave the chat visible in **Pinned + recent** mode.
+Configuration starts with enabling the widget and choosing its layout, followed
+by visible chat count (1-10), recent previews
+per chat (0-3), avatars, friend status, unread indicators, and whether clicking a
+chat opens its sidebar view. Defaults are three chats, one preview, and a
+240-pixel regular width. Size is controlled through Alt-dragging rather than a
+width setting. Switching layouts resets the dragged size. All other settings
+remain in RuneLite configuration.
 
-Pins are saved immediately in the background as a small, unencrypted JSON file
-under `.runelite/plugin-data/enhanced-messaging/pins/<character-key>.json`. The
-hashed key keeps characters separate. Files contain pinned player names and
-their order, but no messages. Pins persist independently of message retention
-and are not uploaded. Deleting message history leaves pins intact. Corrupt pin
-files are preserved and pinning is unavailable until the file is repaired or
-removed and the plugin re-enabled; save errors keep session pins and are reported.
+Enable **Low footprint** for a transparent, resizable grid showing only circular
+avatars and unread indicators. Chats fill left to right, then wrap onto the next
+row as you narrow the widget. Widen it for a horizontal strip or narrow it for a
+vertical stack. Names, message previews, status orbs, chat backgrounds and footer
+text are hidden. Avatars are always shown, even if **Show avatars** is disabled.
+**Visible chats**, **Show New indicator**, and **Click opens sidebar** still apply.
+An empty grid is hidden. Compact height can shrink to 40 pixels.
 
-Previews show incoming messages in the standard text colour and outgoing messages
-in muted blue, without sender prefixes.
-Each message occupies at most two lines, with long text shortened. Looking at a
-preview or pinning does not mark messages read; opening the sidebar conversation
-does. Empty pinned chats display **No messages this session.** Widget rows are
-passive when **Click opens sidebar** is off, while pin controls still work. If
-the widget would exceed its resized height or the game window height, only complete rows are shown
-with a **More chats in sidebar** footer when there is spare room beneath them.
-The footer never hides a chat that fits; shrinking the bottom padding keeps that
-chat visible. The widget hides on logout, and mouse
-actions are removed when the plugin stops. Drawing uses cached pixels and does
-no disk access or history scanning.
+Choose **Unread indicator style > New pill** (the default) or **Glowing avatar**.
+Glow uses a soft, steady gold halo around unread avatars instead of a label.
+It applies in both layouts and clears when the sidebar conversation is read.
+When unread indicators are enabled, choosing Glow also shows avatars in the
+regular layout even if **Show avatars** is disabled. **Show New indicator** turns
+off either indicator without changing unread state.
+
+Glow cells need less width than pill cells. For four chats, these dragged sizes
+fit the complete grid (width x height in pixels):
+
+| Indicator | Two columns, two rows | Four columns, one row |
+| --- | --- | --- |
+| New pill | 148 x 80 | 292 x 44 |
+| Glowing avatar | 76 x 80 | 148 x 44 |
+
+The latest incoming message's sender always takes the first widget slot. With
+**Visible chats** set to one, a message from another player replaces the current
+row or compact avatar. Remaining slots show recent conversations. Reading the
+conversation or replying does not displace the latest sender; the next incoming
+message selects the next sender. Restored history does not count as a new incoming
+message, and logout or clearing history resets this priority.
+
+Regular previews show incoming messages in the standard text colour and outgoing
+messages in muted blue, without sender prefixes. Each message occupies at most
+two lines, with long text shortened. Viewing either widget layout never marks
+messages read; opening the sidebar conversation does. Widget rows and compact
+avatars are passive when **Click opens sidebar** is off.
+
+If the widget exceeds its resized height or the game window height, only complete
+chats are shown and hidden cells cannot be clicked. The regular layout displays
+**More chats in sidebar** when there is spare room beneath visible chats. This
+footer never hides a chat that fits. The widget hides on logout and mouse actions
+are removed when the plugin stops. Drawing uses cached pixels with no disk access
+or history scanning. Resizing rebuilds the compact grid and hit areas on the UI
+thread. Glow is cached too, and compact mode skips message-preview snapshots.

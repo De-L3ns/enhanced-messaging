@@ -13,14 +13,11 @@ public class WidgetView
 	WidgetOptions options;
 	List<Chat> chats;
 	long contextToken;
-	boolean canPin;
-	String status;
 
 	@Value
 	public static class Chat
 	{
 		String player;
-		boolean pinned;
 		boolean unread;
 		FriendStatus status;
 		BufferedImage avatar;

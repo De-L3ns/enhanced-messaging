@@ -1,9 +1,10 @@
 package com.enhancedmessaging.presentation;
 
 import com.enhancedmessaging.application.WidgetView;
+import com.enhancedmessaging.application.WidgetOptions;
 import com.enhancedmessaging.domain.FriendStatus;
 import com.enhancedmessaging.domain.PrivateMessage;
-import com.enhancedmessaging.domain.WidgetChatMode;
+import com.enhancedmessaging.domain.WidgetUnreadStyle;
 import java.awt.Color;
 import java.awt.Dimension;
 import java.awt.Font;
@@ -33,12 +34,14 @@ public class MessageWidgetOverlay extends Overlay
 	private static final Font SMALL = FontManager.getDefaultFont().deriveFont(10f);
 	private static final Font BADGE = SMALL.deriveFont(Font.BOLD);
 	private static final int FOOTER_HEIGHT = 22;
+	private static final int DEFAULT_WIDTH = 240;
 	private final BooleanSupplier visible;
 	private final BooleanSupplier interactive;
 	private final IntSupplier canvasHeight;
 	private volatile Frame frame;
 	private volatile Interaction interaction;
 	private volatile Dimension resizedSize;
+	private volatile WidgetOptions layoutOptions;
 	private final AtomicBoolean resizeQueued = new AtomicBoolean();
 	// Only the UI thread accesses this view or builds image pixels.
 	private WidgetView view;
@@ -58,8 +61,12 @@ public class MessageWidgetOverlay extends Overlay
 	@Override
 	public void setPreferredSize(Dimension size)
 	{
-		Dimension bounded = size == null ? null : new Dimension(Math.max(180, Math.min(360, size.width)),
-			Math.max(60, Math.min(1600, size.height)));
+		WidgetOptions options = layoutOptions;
+		int minWidth = options == null ? 32 : minimumWidth(options);
+		int maxWidth = options == null || options.isLowFootprint() ? 724 : 360;
+		int minHeight = options == null || options.isLowFootprint() ? 40 : 60;
+		Dimension bounded = size == null ? null : new Dimension(Math.max(minWidth, Math.min(maxWidth, size.width)),
+			Math.max(minHeight, Math.min(1600, size.height)));
 		super.setPreferredSize(bounded);
 		resizedSize = bounded;
 		clearInteraction();
@@ -78,6 +85,11 @@ public class MessageWidgetOverlay extends Overlay
 	{
 		clearInteraction();
 		this.view = view == null || !view.getOptions().isEnabled() ? null : view;
+		if (this.view != null)
+		{
+			layoutOptions = this.view.getOptions();
+			setMinimumSize(layoutOptions.isLowFootprint() ? 32 : 60);
+		}
 		frame = view == null || !view.getOptions().isEnabled() ? null : build(view);
 	}
 
@@ -90,14 +102,18 @@ public class MessageWidgetOverlay extends Overlay
 	public Dimension render(Graphics2D graphics)
 	{
 		Frame current = frame;
-		if (current == null || !visible.getAsBoolean())
+		if (current == null || !visible.getAsBoolean()
+			|| current.view.getOptions().isLowFootprint() && current.rows.isEmpty())
 		{
 			clearInteraction();
 			return null;
 		}
 		int available = Math.max(70, canvasHeight.getAsInt() - 20);
 		Dimension size = resizedSize;
-		if (size != null) { available = Math.min(available, size.height); }
+		if (size != null)
+		{
+			available = Math.min(available, Math.max(current.view.getOptions().isLowFootprint() ? 40 : 60, size.height));
+		}
 		int rows = 0;
 		int contentBottom = 8;
 		for (Row row : current.rows)
@@ -112,7 +128,8 @@ public class MessageWidgetOverlay extends Overlay
 		}
 		boolean hiddenChats = rows < current.rows.size();
 		// The footer uses spare space; it must never displace a chat that fits.
-		boolean footer = hiddenChats && available - contentBottom >= FOOTER_HEIGHT;
+		boolean footer = hiddenChats && !current.view.getOptions().isLowFootprint()
+			&& available - contentBottom >= FOOTER_HEIGHT;
 		int naturalHeight = hiddenChats ? contentBottom + 8 + (footer ? FOOTER_HEIGHT : 0) : current.image.getHeight();
 		int height = size == null ? Math.min(naturalHeight, available) : available;
 		Graphics2D g = (Graphics2D) graphics.create();
@@ -133,7 +150,7 @@ public class MessageWidgetOverlay extends Overlay
 		{
 			g.dispose();
 		}
-		interaction = frame == current && (size == null || size.width == current.image.getWidth())
+		interaction = frame == current && widthFor(current.view.getOptions()) == current.image.getWidth()
 			&& interactive.getAsBoolean() ? new Interaction(current, rows, height) : null;
 		return new Dimension(current.image.getWidth(), height);
 	}
@@ -157,14 +174,13 @@ public class MessageWidgetOverlay extends Overlay
 			Row row = current.frame.rows.get(i);
 			if (row.bounds.contains(x, y))
 			{
-				boolean pin = row.pin.contains(x, y);
-				if (pin ? !current.frame.view.isCanPin() : !current.frame.view.getOptions().isClickToOpen())
+				if (!current.frame.view.getOptions().isClickToOpen())
 				{
 					return null;
 				}
-				Rectangle bounds = new Rectangle(pin ? row.pin : row.bounds);
+				Rectangle bounds = new Rectangle(row.bounds);
 				bounds.translate(overlay.x, overlay.y);
-				return new Action(row.player, pin, current.frame.view.getContextToken(), bounds);
+				return new Action(row.player, current.frame.view.getContextToken(), bounds);
 			}
 		}
 		return null;
@@ -172,8 +188,8 @@ public class MessageWidgetOverlay extends Overlay
 
 	private Frame build(WidgetView view)
 	{
-		Dimension size = resizedSize;
-		int width = size == null ? Math.max(180, Math.min(360, view.getOptions().getWidth())) : size.width;
+		if (view.getOptions().isLowFootprint()) { return buildCompact(view); }
+		int width = widthFor(view.getOptions());
 		BufferedImage work = new BufferedImage(width, 1600, BufferedImage.TYPE_INT_ARGB);
 		Graphics2D g = work.createGraphics();
 		List<Row> rows = new ArrayList<>();
@@ -204,9 +220,9 @@ public class MessageWidgetOverlay extends Overlay
 				g.fillRect(8, y, width - 16, height);
 				int nameX = 14;
 				FriendStatus status = view.getOptions().isStatus() ? chat.getStatus() : FriendStatus.UNKNOWN;
-				if (view.getOptions().isAvatars())
+				if (view.getOptions().showsAvatars())
 				{
-					new AvatarIcon(chat.getAvatar(), status).paintIcon(null, g, nameX, y + 4);
+					paintAvatar(g, chat, nameX, y + 4, status, view.getOptions());
 					nameX += 32;
 				}
 				else if (status != FriendStatus.UNKNOWN)
@@ -215,23 +231,13 @@ public class MessageWidgetOverlay extends Overlay
 					g.fillOval(nameX, y + 15, 7, 7);
 					nameX += 13;
 				}
-				Rectangle pin = new Rectangle(width - 34, y + 4, 22, 28);
-				g.setColor(!view.isCanPin() ? Color.DARK_GRAY : chat.isPinned() ? new Color(255, 207, 86) : Color.GRAY);
-				g.setStroke(new java.awt.BasicStroke(1.3f));
-				java.awt.Polygon diamond = new java.awt.Polygon(
-					new int[]{width - 23, width - 18, width - 23, width - 28},
-					new int[]{y + 12, y + 17, y + 22, y + 17}, 4);
-				if (chat.isPinned()) { g.fillPolygon(diamond); } else { g.drawPolygon(diamond); }
-				int nameEnd = pin.x - 5;
-				if (view.getOptions().isUnread() && chat.isUnread())
+				int nameEnd = width - 18;
+				if (view.getOptions().isUnread() && !view.getOptions().usesGlow() && chat.isUnread())
 				{
 					g.setFont(BADGE);
 					int badgeWidth = g.getFontMetrics().stringWidth("New") + 14;
 					nameEnd -= badgeWidth + 6;
-					g.setColor(ColorScheme.BRAND_ORANGE);
-					g.fillRoundRect(nameEnd, y + 9, badgeWidth, 18, 18, 18);
-					g.setColor(ColorScheme.DARKER_GRAY_COLOR);
-					g.drawString("New", nameEnd + 7, y + 22);
+					paintBadge(g, nameEnd, y + 9);
 					nameEnd -= 6;
 				}
 				g.setFont(FontManager.getRunescapeFont());
@@ -246,27 +252,20 @@ public class MessageWidgetOverlay extends Overlay
 					g.drawString(line.text, 16, lineY);
 					lineY += 16;
 				}
-				rows.add(new Row(chat.getPlayer(), new Rectangle(8, y, width - 16, height), pin));
+				rows.add(new Row(chat.getPlayer(), new Rectangle(8, y, width - 16, height)));
 				y += height + 5;
 			}
 			g.setFont(BODY);
 			g.setColor(ColorScheme.TEXT_COLOR);
 			if (rows.isEmpty())
 			{
-				String hint = view.getOptions().getMode() == WidgetChatMode.PINNED_ONLY
-					? "Pin a chat from the sidebar." : "Send or receive a private message.";
+				String hint = "Send or receive a private message.";
 				for (String line : wrap(hint, g.getFontMetrics(), width - 20))
 				{
 					g.drawString(line, 10, y + 16);
 					y += 16;
 				}
 				y += 11;
-			}
-			if (!view.getStatus().isEmpty())
-			{
-				g.setFont(SMALL);
-				g.drawString(ellipsize(view.getStatus(), g.getFontMetrics(), width - 20), 10, y + 12);
-				y += 20;
 			}
 		}
 		finally
@@ -277,6 +276,78 @@ public class MessageWidgetOverlay extends Overlay
 		Graphics2D copy = image.createGraphics();
 		try { copy.drawImage(work, 0, 0, null); } finally { copy.dispose(); }
 		return new Frame(image, List.copyOf(rows), view);
+	}
+
+	private Frame buildCompact(WidgetView view)
+	{
+		int width = widthFor(view.getOptions());
+		int stride = compactStride(view.getOptions());
+		int columns = Math.max(1, (width - 4) / stride);
+		int gridRows = (view.getChats().size() + columns - 1) / columns;
+		BufferedImage image = new BufferedImage(width, gridRows * 36 + 8, BufferedImage.TYPE_INT_ARGB);
+		Graphics2D g = image.createGraphics();
+		List<Row> rows = new ArrayList<>();
+		int index = 0;
+		try
+		{
+			g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+			for (WidgetView.Chat chat : view.getChats())
+			{
+				int x = 4 + index % columns * stride;
+				int y = 4 + index / columns * 36;
+				paintAvatar(g, chat, x + 4, y + 2, FriendStatus.UNKNOWN, view.getOptions());
+				if (view.getOptions().isUnread() && !view.getOptions().usesGlow() && chat.isUnread())
+				{
+					paintBadge(g, x + 30, y + 7);
+				}
+				rows.add(new Row(chat.getPlayer(), new Rectangle(x, y, stride - 4, 32)));
+				index++;
+			}
+		}
+		finally { g.dispose(); }
+		return new Frame(image, List.copyOf(rows), view);
+	}
+
+	private int widthFor(WidgetOptions options)
+	{
+		Dimension size = resizedSize;
+		int defaultWidth = options.isLowFootprint() ? minimumWidth(options) : DEFAULT_WIDTH;
+		int width = size == null ? defaultWidth : size.width;
+		return Math.max(minimumWidth(options), Math.min(options.isLowFootprint() ? 724 : 360, width));
+	}
+
+	private static int minimumWidth(WidgetOptions options)
+	{
+		return options.isLowFootprint() ? compactStride(options) + 4 : 180;
+	}
+
+	private static int compactStride(WidgetOptions options)
+	{
+		return options.getUnreadStyle() == WidgetUnreadStyle.GLOW ? 36 : 72;
+	}
+
+	private static void paintBadge(Graphics2D g, int x, int y)
+	{
+		g.setFont(BADGE);
+		int width = g.getFontMetrics().stringWidth("New") + 14;
+		g.setColor(ColorScheme.BRAND_ORANGE);
+		g.fillRoundRect(x, y, width, 18, 18, 18);
+		g.setColor(ColorScheme.DARKER_GRAY_COLOR);
+		g.drawString("New", x + 7, y + 13);
+	}
+
+	private static void paintAvatar(Graphics2D g, WidgetView.Chat chat, int x, int y, FriendStatus status, WidgetOptions options)
+	{
+		if (options.usesGlow() && chat.isUnread())
+		{
+			int[] opacity = {24, 40, 80, 150};
+			for (int i = 0; i < opacity.length; i++)
+			{
+				g.setColor(new Color(255, 207, 86, opacity[i]));
+				g.fillOval(x - 4 + i, y - 2 + i, 32 - i * 2, 32 - i * 2);
+			}
+		}
+		new AvatarIcon(chat.getAvatar(), status).paintIcon(null, g, x, y);
 	}
 
 	static List<String> wrap(String text, FontMetrics metrics, int width)
@@ -328,7 +399,6 @@ public class MessageWidgetOverlay extends Overlay
 	public static class Action
 	{
 		String player;
-		boolean pin;
 		long contextToken;
 		Rectangle bounds;
 	}
@@ -338,7 +408,6 @@ public class MessageWidgetOverlay extends Overlay
 	{
 		String player;
 		Rectangle bounds;
-		Rectangle pin;
 	}
 
 	@Value
